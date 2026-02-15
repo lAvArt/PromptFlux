@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -55,6 +56,15 @@ def _parse_message(message: Any) -> tuple[str, dict[str, Any]]:
     return "", {}
 
 
+def _normalize_phrase(value: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    return " ".join(cleaned.split())
+
+
+def _compact_phrase(value: str) -> str:
+    return re.sub(r"\s+", "", _normalize_phrase(value))
+
+
 class PromptFluxSttService:
     def __init__(self) -> None:
         self.config = load_config()
@@ -78,6 +88,7 @@ class PromptFluxSttService:
         self.transcribing_active = False
         self.last_wake_time = 0.0
         self.wake_task: asyncio.Task | None = None
+        self.silence_stop_task: asyncio.Task | None = None
 
     async def send_message(self, ws: WebSocketServerProtocol, event: str, payload: dict) -> None:
         await ws.send(json.dumps({"type": event, **payload}))
@@ -100,6 +111,41 @@ class PromptFluxSttService:
     ) -> None:
         await self.send_message(ws, "ERROR", {"code": code, "message": message})
 
+    def _recent_rms(self, window_ms: int = 250) -> float:
+        audio = self.audio.get_recent_audio(window_ms)
+        if audio.size == 0:
+            return 0.0
+        return float((audio.astype("float32") ** 2).mean() ** 0.5)
+
+    def _cancel_silence_monitor(self) -> None:
+        if self.silence_stop_task:
+            self.silence_stop_task.cancel()
+            self.silence_stop_task = None
+
+    async def _silence_stop_monitor(self) -> None:
+        threshold = max(0.001, float(self.config.wake_silence_rms_threshold))
+        required_ms = max(400, int(self.config.wake_silence_ms))
+        required_s = required_ms / 1000.0
+        silence_started_at: float | None = None
+
+        while not self.shutdown_event.is_set():
+            await asyncio.sleep(0.18)
+            if not self.recording_active:
+                return
+            if self.transcribing_active:
+                return
+
+            rms = self._recent_rms(250)
+            if rms <= threshold:
+                if silence_started_at is None:
+                    silence_started_at = time.monotonic()
+                elif time.monotonic() - silence_started_at >= required_s:
+                    logger.info("Silence threshold reached; requesting auto stop")
+                    await self.broadcast_message("AUTO_STOP", {"reason": "silence"})
+                    return
+            else:
+                silence_started_at = None
+
     async def wake_word_loop(self) -> None:
         if self.config.trigger_mode != "wake-word":
             return
@@ -111,6 +157,11 @@ class PromptFluxSttService:
             return
 
         wake_word = self.config.wake_word.strip().lower()
+        wake_word_normalized = _normalize_phrase(wake_word)
+        wake_word_compact = _compact_phrase(wake_word)
+        if not wake_word_normalized:
+            logger.warning("Wake word normalized to empty value; wake detection disabled.")
+            return
         poll_s = max(0.25, self.config.wake_poll_ms / 1000.0)
         cooldown_s = max(0.5, self.config.wake_cooldown_ms / 1000.0)
         logger.info("Wake-word listener enabled for '%s'", wake_word)
@@ -141,10 +192,11 @@ class PromptFluxSttService:
                 logger.exception("Wake-word detection transcription failed")
                 continue
 
-            spoken = " ".join(text.lower().split())
+            spoken = _normalize_phrase(text)
             if not spoken:
                 continue
-            if wake_word in spoken:
+            spoken_compact = _compact_phrase(text)
+            if wake_word_normalized in spoken or wake_word_compact in spoken_compact:
                 self.last_wake_time = now
                 logger.info("Wake word detected")
                 await self.broadcast_message(
@@ -160,11 +212,21 @@ class PromptFluxSttService:
             async for raw_message in ws:
                 msg_type, payload = _parse_message(raw_message)
                 if msg_type == "START":
+                    if self.recording_active:
+                        continue
                     self.recording_active = True
+                    self.transcribing_active = False
                     self.audio.begin_recording()
+                    start_reason = str(payload.get("reason", "")).strip().lower()
+                    if start_reason == "wake":
+                        self._cancel_silence_monitor()
+                        self.silence_stop_task = asyncio.create_task(self._silence_stop_monitor())
+                    else:
+                        self._cancel_silence_monitor()
                     continue
 
                 if msg_type == "STOP":
+                    self._cancel_silence_monitor()
                     self.recording_active = False
                     self.transcribing_active = True
                     audio = self.audio.stop_recording()
@@ -190,6 +252,7 @@ class PromptFluxSttService:
 
                 if msg_type == "QUIT":
                     logger.info("Quit message received")
+                    self._cancel_silence_monitor()
                     self.shutdown_event.set()
                     break
 
@@ -198,6 +261,14 @@ class PromptFluxSttService:
             logger.info("Client disconnected")
         finally:
             self.clients.discard(ws)
+            if not self.clients:
+                self._cancel_silence_monitor()
+                self.recording_active = False
+                self.transcribing_active = False
+                try:
+                    self.audio.stop_recording()
+                except Exception:
+                    pass
 
     async def run(self) -> None:
         self.audio.start()
@@ -216,6 +287,7 @@ class PromptFluxSttService:
                 await self.wake_task
             except asyncio.CancelledError:
                 pass
+        self._cancel_silence_monitor()
         self.audio.close()
 
 

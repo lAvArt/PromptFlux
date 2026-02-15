@@ -212,6 +212,21 @@
         color: #ecf2ff;
         font-size: 13px;
       }
+      .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-top: 6px;
+      }
+      .checkbox-row input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+      }
+      .cue-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
       .hotkey-row {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -328,6 +343,39 @@
 
           <div class="two-col">
             <div class="field">
+              <label for="cue-volume-input">Sound Cue Volume <span id="cue-volume-value">45%</span></label>
+              <input id="cue-volume-input" type="range" min="0" max="100" step="1" />
+            </div>
+            <div class="field">
+              <label>Sound Cues</label>
+              <div class="checkbox-row">
+                <input id="cue-enabled-input" type="checkbox" />
+                <label for="cue-enabled-input" style="margin: 0;">Enable cue sounds</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="cue-grid">
+            <div class="checkbox-row">
+              <input id="cue-start-input" type="checkbox" />
+              <label for="cue-start-input" style="margin: 0;">On start recording</label>
+            </div>
+            <div class="checkbox-row">
+              <input id="cue-stop-input" type="checkbox" />
+              <label for="cue-stop-input" style="margin: 0;">On stop recording</label>
+            </div>
+            <div class="checkbox-row">
+              <input id="cue-transcribed-input" type="checkbox" />
+              <label for="cue-transcribed-input" style="margin: 0;">On transcribed</label>
+            </div>
+            <div class="checkbox-row">
+              <input id="cue-error-input" type="checkbox" />
+              <label for="cue-error-input" style="margin: 0;">On error</label>
+            </div>
+          </div>
+
+          <div class="two-col">
+            <div class="field">
               <label for="language-select">Transcription Language</label>
               <select id="language-select">
                 <option value="auto">Auto-detect</option>
@@ -370,12 +418,16 @@
           </div>
 
           <div class="two-col">
+            <div class="field" id="wake-silence-field">
+              <label for="wake-silence-input">Wake Silence Stop (ms)</label>
+              <input id="wake-silence-input" type="number" min="400" max="6000" step="50" />
+            </div>
             <div class="field">
               <label for="prebuffer-input">Pre-buffer (ms)</label>
               <input id="prebuffer-input" type="number" min="0" max="5000" step="50" />
             </div>
             <div class="field" id="wake-duration-field">
-              <label for="wake-duration-input">Wake Capture Duration (ms)</label>
+              <label for="wake-duration-input">Wake Max Duration (ms)</label>
               <input id="wake-duration-input" type="number" min="1200" max="30000" step="100" />
             </div>
           </div>
@@ -420,10 +472,18 @@
 
       const hotkeyInput = document.getElementById("hotkey-input");
       const outputModeSelect = document.getElementById("output-mode-select");
+      const cueEnabledInput = document.getElementById("cue-enabled-input");
+      const cueVolumeInput = document.getElementById("cue-volume-input");
+      const cueVolumeValue = document.getElementById("cue-volume-value");
+      const cueStartInput = document.getElementById("cue-start-input");
+      const cueStopInput = document.getElementById("cue-stop-input");
+      const cueTranscribedInput = document.getElementById("cue-transcribed-input");
+      const cueErrorInput = document.getElementById("cue-error-input");
       const languageSelect = document.getElementById("language-select");
       const triggerModeSelect = document.getElementById("trigger-mode-select");
       const captureSourceSelect = document.getElementById("capture-source-select");
       const wakeWordInput = document.getElementById("wake-word-input");
+      const wakeSilenceInput = document.getElementById("wake-silence-input");
       const wakeDurationInput = document.getElementById("wake-duration-input");
       const prebufferInput = document.getElementById("prebuffer-input");
       const micDeviceSelect = document.getElementById("mic-device-select");
@@ -431,6 +491,7 @@
       const micDeviceField = document.getElementById("mic-device-field");
       const sysDeviceField = document.getElementById("sys-device-field");
       const wakeWordField = document.getElementById("wake-word-field");
+      const wakeSilenceField = document.getElementById("wake-silence-field");
       const wakeDurationField = document.getElementById("wake-duration-field");
 
       const state = {
@@ -438,7 +499,17 @@
         devices: { microphones: [], systemAudio: [] },
         outputToggleHotkey: "Ctrl+Shift+Alt+V",
         capturingHotkey: false,
+        cueSettings: {
+          enabled: true,
+          volume: 45,
+          onStart: true,
+          onStop: true,
+          onTranscribed: true,
+          onError: true,
+        },
       };
+
+      let cueAudioContext = null;
 
       function setToneClass(node, tone) {
         node.classList.remove("neutral", "recording", "transcribing", "success", "error");
@@ -504,6 +575,114 @@
         }
       }
 
+      function applyCueSettings(next) {
+        state.cueSettings = {
+          enabled: Boolean(next && next.enabled),
+          volume: Number.isFinite(Number(next && next.volume))
+            ? Math.max(0, Math.min(100, Math.round(Number(next.volume))))
+            : 45,
+          onStart: Boolean(next && next.onStart),
+          onStop: Boolean(next && next.onStop),
+          onTranscribed: Boolean(next && next.onTranscribed),
+          onError: Boolean(next && next.onError),
+        };
+
+        cueEnabledInput.checked = state.cueSettings.enabled;
+        cueVolumeInput.value = String(state.cueSettings.volume);
+        cueVolumeValue.textContent = `${state.cueSettings.volume}%`;
+        cueStartInput.checked = state.cueSettings.onStart;
+        cueStopInput.checked = state.cueSettings.onStop;
+        cueTranscribedInput.checked = state.cueSettings.onTranscribed;
+        cueErrorInput.checked = state.cueSettings.onError;
+        const enabled = state.cueSettings.enabled;
+        cueVolumeInput.disabled = !enabled;
+        cueStartInput.disabled = !enabled;
+        cueStopInput.disabled = !enabled;
+        cueTranscribedInput.disabled = !enabled;
+        cueErrorInput.disabled = !enabled;
+      }
+
+      async function ensureCueAudioContext() {
+        if (!cueAudioContext) {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          if (!Ctx) return null;
+          cueAudioContext = new Ctx();
+        }
+        if (cueAudioContext.state === "suspended") {
+          try {
+            await cueAudioContext.resume();
+          } catch {
+            return null;
+          }
+        }
+        return cueAudioContext;
+      }
+
+      function cueGainLevel() {
+        const normalized = Math.max(0, Math.min(1, state.cueSettings.volume / 100));
+        return Math.pow(normalized, 1.8) * 0.22;
+      }
+
+      async function playCueTone(freq, durationMs, wave = "sine", offsetMs = 0) {
+        if (!state.cueSettings.enabled) return;
+        const ctx = await ensureCueAudioContext();
+        if (!ctx) return;
+
+        const gain = ctx.createGain();
+        const osc = ctx.createOscillator();
+        const filter = ctx.createBiquadFilter();
+        osc.type = wave;
+        osc.frequency.value = freq;
+        filter.type = "lowpass";
+        filter.frequency.value = 1800;
+        filter.Q.value = 0.7;
+        gain.gain.value = 0;
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+
+        const now = ctx.currentTime + Math.max(0, offsetMs) / 1000;
+        const durationSec = Math.max(0.02, durationMs / 1000);
+        const attack = Math.min(0.018, durationSec * 0.35);
+        const release = Math.min(0.11, durationSec * 0.65);
+        const peak = cueGainLevel();
+
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(Math.max(0.0001, peak), now + attack);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + attack + release);
+
+        osc.start(now);
+        osc.stop(now + durationSec + 0.02);
+      }
+
+      function playCueByType(type) {
+        if (type === "start" && !state.cueSettings.onStart) return;
+        if (type === "stop" && !state.cueSettings.onStop) return;
+        if (type === "transcribed" && !state.cueSettings.onTranscribed) return;
+        if (type === "error" && !state.cueSettings.onError) return;
+
+        if (type === "start") {
+          void playCueTone(410, 72, "sine");
+          void playCueTone(520, 84, "sine", 45);
+          return;
+        }
+        if (type === "stop") {
+          void playCueTone(500, 76, "sine");
+          void playCueTone(380, 96, "sine", 44);
+          return;
+        }
+        if (type === "transcribed") {
+          void playCueTone(620, 74, "triangle");
+          void playCueTone(790, 90, "sine", 62);
+          return;
+        }
+        if (type === "error") {
+          void playCueTone(270, 110, "triangle");
+          void playCueTone(220, 128, "triangle", 70);
+        }
+      }
+
       function optionLabel(device) {
         const base = `${device.name} [${device.hostapi}]`;
         return device.isDefault ? `${base} (Default)` : base;
@@ -532,6 +711,7 @@
         micDeviceField.style.display = source === "microphone" ? "block" : "none";
         sysDeviceField.style.display = source === "system-audio" ? "block" : "none";
         wakeWordField.style.display = triggerMode === "wake-word" ? "block" : "none";
+        wakeSilenceField.style.display = triggerMode === "wake-word" ? "block" : "none";
         wakeDurationField.style.display = triggerMode === "wake-word" ? "block" : "none";
       }
 
@@ -539,10 +719,19 @@
         if (!state.config) return;
         hotkeyInput.value = state.config.hotkey || "";
         outputModeSelect.value = state.config.outputMode || "clipboard-only";
+        applyCueSettings({
+          enabled: state.config.soundCueEnabled,
+          volume: state.config.soundCueVolume,
+          onStart: state.config.soundCueOnStart,
+          onStop: state.config.soundCueOnStop,
+          onTranscribed: state.config.soundCueOnTranscribed,
+          onError: state.config.soundCueOnError,
+        });
         languageSelect.value = state.config.transcriptionLanguage || "auto";
         triggerModeSelect.value = state.config.triggerMode || "hold-to-talk";
         captureSourceSelect.value = state.config.captureSource || "microphone";
         wakeWordInput.value = state.config.wakeWord || "hey promptflux";
+        wakeSilenceInput.value = String(state.config.wakeSilenceMs ?? 1200);
         wakeDurationInput.value = String(state.config.wakeRecordMs ?? 5000);
         prebufferInput.value = String(state.config.preBufferMs ?? 500);
         refillSelect(micDeviceSelect, state.devices.microphones || [], state.config.microphoneDevice);
@@ -586,9 +775,16 @@
         const payload = {
           hotkey: hotkeyInput.value,
           outputMode: outputModeSelect.value,
+          soundCueEnabled: cueEnabledInput.checked,
+          soundCueVolume: Number(cueVolumeInput.value || 45),
+          soundCueOnStart: cueStartInput.checked,
+          soundCueOnStop: cueStopInput.checked,
+          soundCueOnTranscribed: cueTranscribedInput.checked,
+          soundCueOnError: cueErrorInput.checked,
           transcriptionLanguage: languageSelect.value,
           triggerMode: triggerModeSelect.value,
           wakeWord: wakeWordInput.value,
+          wakeSilenceMs: Number(wakeSilenceInput.value || 1200),
           wakeRecordMs: Number(wakeDurationInput.value || 5000),
           captureSource: captureSourceSelect.value,
           microphoneDevice: micDeviceSelect.value || null,
@@ -601,6 +797,14 @@
           const result = await api.invoke("settings:save", payload);
           state.config = result.config;
           applyOutputMode(result.config.outputMode);
+          applyCueSettings({
+            enabled: result.config.soundCueEnabled,
+            volume: result.config.soundCueVolume,
+            onStart: result.config.soundCueOnStart,
+            onStop: result.config.soundCueOnStop,
+            onTranscribed: result.config.soundCueOnTranscribed,
+            onError: result.config.soundCueOnError,
+          });
           saveNote.textContent = result.restartRequired
             ? "Saved. Restart app to apply trigger/capture listener changes."
             : "Saved.";
@@ -627,6 +831,17 @@
       });
       captureSourceSelect.addEventListener("change", refreshDeviceVisibility);
       triggerModeSelect.addEventListener("change", refreshDeviceVisibility);
+      cueEnabledInput.addEventListener("change", () => {
+        const enabled = cueEnabledInput.checked;
+        cueVolumeInput.disabled = !enabled;
+        cueStartInput.disabled = !enabled;
+        cueStopInput.disabled = !enabled;
+        cueTranscribedInput.disabled = !enabled;
+        cueErrorInput.disabled = !enabled;
+      });
+      cueVolumeInput.addEventListener("input", () => {
+        cueVolumeValue.textContent = `${Number(cueVolumeInput.value || 0)}%`;
+      });
       detectHotkey.addEventListener("click", () => {
         setCapturingHotkey(!state.capturingHotkey);
       });
@@ -691,6 +906,19 @@
           state.config.outputMode = mode;
         }
       };
+
+      window.__promptfluxSetCueSettings = function (payload) {
+        applyCueSettings(payload || {});
+      };
+
+      window.__promptfluxPlayCue = function (payload) {
+        const type = String(payload && payload.type ? payload.type : "");
+        playCueByType(type);
+      };
+
+      document.addEventListener("pointerdown", () => {
+        void ensureCueAudioContext();
+      }, { passive: true });
     </script>
   </body>
 </html>

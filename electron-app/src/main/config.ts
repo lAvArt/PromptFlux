@@ -13,7 +13,14 @@ export interface AppConfig {
   transcriptionLanguage: TranscriptionLanguage;
   triggerMode: TriggerMode;
   wakeWord: string;
+  wakeSilenceMs: number;
   wakeRecordMs: number;
+  soundCueEnabled: boolean;
+  soundCueVolume: number;
+  soundCueOnStart: boolean;
+  soundCueOnStop: boolean;
+  soundCueOnTranscribed: boolean;
+  soundCueOnError: boolean;
   captureSource: CaptureSource;
   microphoneDevice: string | null;
   systemAudioDevice: string | null;
@@ -31,7 +38,14 @@ const DEFAULT_CONFIG: AppConfig = {
   transcriptionLanguage: "auto",
   triggerMode: "hold-to-talk",
   wakeWord: "hey promptflux",
+  wakeSilenceMs: 1200,
   wakeRecordMs: 5000,
+  soundCueEnabled: true,
+  soundCueVolume: 45,
+  soundCueOnStart: true,
+  soundCueOnStop: true,
+  soundCueOnTranscribed: true,
+  soundCueOnError: true,
   captureSource: "microphone",
   microphoneDevice: null,
   systemAudioDevice: null,

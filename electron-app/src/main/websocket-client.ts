@@ -16,6 +16,7 @@ export interface ErrorMessage {
 type MessageHandler = {
   onReady: () => void;
   onWake: (payload: { wake_word?: string; heard?: string }) => void;
+  onAutoStop: (payload: { reason?: string }) => void;
   onResult: (message: ResultMessage) => void;
   onError: (message: ErrorMessage) => void;
   onClose: () => void;
@@ -94,6 +95,12 @@ export class SttWebSocketClient {
           this.handlers.onWake({
             wake_word: typeof payload.wake_word === "string" ? payload.wake_word : undefined,
             heard: typeof payload.heard === "string" ? payload.heard : undefined,
+          });
+          return;
+        }
+        if (kind === "AUTO_STOP") {
+          this.handlers.onAutoStop({
+            reason: typeof payload.reason === "string" ? payload.reason : undefined,
           });
           return;
         }

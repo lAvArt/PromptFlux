@@ -19,7 +19,14 @@ type SettingsSaveRequest = {
   transcriptionLanguage: AppConfig["transcriptionLanguage"];
   triggerMode: AppConfig["triggerMode"];
   wakeWord: string;
+  wakeSilenceMs: number;
   wakeRecordMs: number;
+  soundCueEnabled: boolean;
+  soundCueVolume: number;
+  soundCueOnStart: boolean;
+  soundCueOnStop: boolean;
+  soundCueOnTranscribed: boolean;
+  soundCueOnError: boolean;
   captureSource: CaptureSource;
   microphoneDevice: string | null;
   systemAudioDevice: string | null;
@@ -138,6 +145,21 @@ function setRendererOutputMode(mode: AppConfig["outputMode"]): void {
   invokeRenderer("__promptfluxSetOutputMode", mode);
 }
 
+function setRendererCueSettings(config: AppConfig): void {
+  invokeRenderer("__promptfluxSetCueSettings", {
+    enabled: config.soundCueEnabled,
+    volume: config.soundCueVolume,
+    onStart: config.soundCueOnStart,
+    onStop: config.soundCueOnStop,
+    onTranscribed: config.soundCueOnTranscribed,
+    onError: config.soundCueOnError,
+  });
+}
+
+function playRendererCue(type: "start" | "stop" | "transcribed" | "error"): void {
+  invokeRenderer("__promptfluxPlayCue", { type });
+}
+
 function clearWakeAutoStopTimer(): void {
   if (wakeAutoStopTimer) {
     clearTimeout(wakeAutoStopTimer);
@@ -152,25 +174,26 @@ function beginRecording(reason: "hotkey" | "wake"): void {
   if (!sttClient?.isConnected()) {
     setRendererStatus("error");
     setRendererTranscript("STT service is not connected.", "error");
+    playRendererCue("error");
     return;
   }
 
   recordingActive = true;
-  sttClient.send("START");
+  sttClient.send("START", reason === "wake" ? { reason: "wake" } : undefined);
   setRendererStatus("recording");
+  playRendererCue("start");
   if (reason === "wake") {
-    setRendererTranscript(`Wake word detected: "${appConfig.wakeWord}". Listening...`, "recording");
-    const duration = Math.max(1200, appConfig.wakeRecordMs);
     clearWakeAutoStopTimer();
-    wakeAutoStopTimer = setTimeout(() => {
-      stopRecording("wake-timeout");
-    }, duration);
+    setRendererTranscript(
+      `Wake word detected: "${appConfig.wakeWord}". Listening until silence...`,
+      "recording",
+    );
   } else {
     setRendererTranscript("Listening...", "recording");
   }
 }
 
-function stopRecording(reason: "hotkey" | "wake-timeout"): void {
+function stopRecording(reason: "hotkey" | "wake-timeout" | "wake-silence"): void {
   if (!recordingActive) {
     return;
   }
@@ -180,12 +203,18 @@ function stopRecording(reason: "hotkey" | "wake-timeout"): void {
   if (!sttClient?.isConnected()) {
     setRendererStatus("error");
     setRendererTranscript("STT service is not connected.", "error");
+    playRendererCue("error");
     return;
   }
 
   setRendererStatus("transcribing");
+  playRendererCue("stop");
   setRendererTranscript(
-    reason === "wake-timeout" ? "Wake capture complete. Transcribing..." : "Transcribing...",
+    reason === "wake-timeout"
+      ? "Wake max duration reached. Transcribing..."
+      : reason === "wake-silence"
+        ? "Silence detected. Transcribing..."
+        : "Transcribing...",
     "transcribing",
   );
   sttClient.send("STOP", { language: appConfig.transcriptionLanguage });
@@ -201,6 +230,7 @@ function createWatchdog(): SttProcessWatchdog {
       transcriptionLanguage: appConfig.transcriptionLanguage,
       triggerMode: appConfig.triggerMode,
       wakeWord: appConfig.wakeWord,
+      wakeSilenceMs: appConfig.wakeSilenceMs,
       captureSource: appConfig.captureSource,
       microphoneDevice: appConfig.microphoneDevice,
       systemAudioDevice: appConfig.systemAudioDevice,
@@ -236,6 +266,12 @@ function createWsClient(): SttWebSocketClient {
       }
       beginRecording("wake");
     },
+    onAutoStop: ({ reason }) => {
+      if (!recordingActive) {
+        return;
+      }
+      stopRecording(reason === "silence" ? "wake-silence" : "wake-timeout");
+    },
     onResult: async ({ text, meta }) => {
       recordingActive = false;
       clearWakeAutoStopTimer();
@@ -247,6 +283,7 @@ function createWsClient(): SttWebSocketClient {
       const finalText = text.trim() ? text : "(No speech detected)";
       setRendererTranscript(finalText, "success");
       setRendererStatus("success");
+      playRendererCue("transcribed");
       setTimeout(() => setRendererStatus("idle"), 1500);
       hotkeyController.resetState();
     },
@@ -256,6 +293,7 @@ function createWsClient(): SttWebSocketClient {
       safeError("[stt:error]", code, message);
       setRendererTranscript(`${code}: ${message}`, "error");
       setRendererStatus("error");
+      playRendererCue("error");
       setTimeout(() => setRendererStatus("idle"), 3000);
       hotkeyController.resetState();
     },
@@ -299,6 +337,7 @@ function registerRecordHotkey(): void {
       safeError("[hotkey]", message);
       setRendererStatus("error");
       setRendererTranscript(message, "error");
+      playRendererCue("error");
     },
   });
 }
@@ -337,6 +376,24 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
   const wakeRecordMs = Number.isFinite(wakeRecordMsRaw)
     ? Math.max(1200, Math.min(30_000, Math.round(wakeRecordMsRaw)))
     : appConfig.wakeRecordMs;
+  const wakeSilenceMsRaw = Number(source.wakeSilenceMs);
+  const wakeSilenceMs = Number.isFinite(wakeSilenceMsRaw)
+    ? Math.max(400, Math.min(6000, Math.round(wakeSilenceMsRaw)))
+    : appConfig.wakeSilenceMs;
+  const asBoolean = (value: unknown, fallback: boolean): boolean =>
+    typeof value === "boolean" ? value : fallback;
+  const soundCueEnabled = asBoolean(source.soundCueEnabled, appConfig.soundCueEnabled);
+  const soundCueOnStart = asBoolean(source.soundCueOnStart, appConfig.soundCueOnStart);
+  const soundCueOnStop = asBoolean(source.soundCueOnStop, appConfig.soundCueOnStop);
+  const soundCueOnTranscribed = asBoolean(
+    source.soundCueOnTranscribed,
+    appConfig.soundCueOnTranscribed,
+  );
+  const soundCueOnError = asBoolean(source.soundCueOnError, appConfig.soundCueOnError);
+  const soundCueVolumeRaw = Number(source.soundCueVolume);
+  const soundCueVolume = Number.isFinite(soundCueVolumeRaw)
+    ? Math.max(0, Math.min(100, Math.round(soundCueVolumeRaw)))
+    : appConfig.soundCueVolume;
   const captureSource =
     source.captureSource === "system-audio" ? "system-audio" : ("microphone" as const);
 
@@ -366,7 +423,14 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
     transcriptionLanguage,
     triggerMode,
     wakeWord,
+    wakeSilenceMs,
     wakeRecordMs,
+    soundCueEnabled,
+    soundCueVolume,
+    soundCueOnStart,
+    soundCueOnStop,
+    soundCueOnTranscribed,
+    soundCueOnError,
     captureSource,
     microphoneDevice: sanitizeDevice(source.microphoneDevice),
     systemAudioDevice: sanitizeDevice(source.systemAudioDevice),
@@ -404,7 +468,14 @@ function registerIpcHandlers(): void {
       transcriptionLanguage: next.transcriptionLanguage,
       triggerMode: next.triggerMode,
       wakeWord: next.wakeWord,
+      wakeSilenceMs: next.wakeSilenceMs,
       wakeRecordMs: next.wakeRecordMs,
+      soundCueEnabled: next.soundCueEnabled,
+      soundCueVolume: next.soundCueVolume,
+      soundCueOnStart: next.soundCueOnStart,
+      soundCueOnStop: next.soundCueOnStop,
+      soundCueOnTranscribed: next.soundCueOnTranscribed,
+      soundCueOnError: next.soundCueOnError,
       captureSource: next.captureSource,
       microphoneDevice: next.microphoneDevice,
       systemAudioDevice: next.systemAudioDevice,
@@ -424,6 +495,7 @@ function registerIpcHandlers(): void {
     const restartRequired =
       previous.triggerMode !== appConfig.triggerMode ||
       previous.wakeWord !== appConfig.wakeWord ||
+      previous.wakeSilenceMs !== appConfig.wakeSilenceMs ||
       previous.transcriptionLanguage !== appConfig.transcriptionLanguage ||
       previous.captureSource !== appConfig.captureSource ||
       previous.microphoneDevice !== appConfig.microphoneDevice ||
@@ -432,6 +504,7 @@ function registerIpcHandlers(): void {
 
     saveConfig(appConfig);
     setRendererOutputMode(appConfig.outputMode);
+    setRendererCueSettings(appConfig);
     if (restartRequired) {
       setRendererTranscript(
         "Listener settings saved. Restart PromptFlux to apply trigger/capture changes.",
@@ -452,7 +525,14 @@ async function bootstrap(): Promise<void> {
     transcriptionLanguage: appConfig.transcriptionLanguage,
     triggerMode: appConfig.triggerMode,
     wakeWord: appConfig.wakeWord,
+    wakeSilenceMs: appConfig.wakeSilenceMs,
     wakeRecordMs: appConfig.wakeRecordMs,
+    soundCueEnabled: appConfig.soundCueEnabled,
+    soundCueVolume: appConfig.soundCueVolume,
+    soundCueOnStart: appConfig.soundCueOnStart,
+    soundCueOnStop: appConfig.soundCueOnStop,
+    soundCueOnTranscribed: appConfig.soundCueOnTranscribed,
+    soundCueOnError: appConfig.soundCueOnError,
     captureSource: appConfig.captureSource,
     sttPort: appConfig.sttPort,
     preBufferMs: appConfig.preBufferMs,
@@ -477,6 +557,7 @@ async function bootstrap(): Promise<void> {
 
   setRendererStatus("starting");
   setRendererOutputMode(appConfig.outputMode);
+  setRendererCueSettings(appConfig);
 
   sttWatchdog = createWatchdog();
   sttWatchdog.start();

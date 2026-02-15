@@ -21,6 +21,8 @@ class ServiceConfig:
     wake_poll_ms: int
     wake_cooldown_ms: int
     wake_buffer_ms: int
+    wake_silence_ms: int
+    wake_silence_rms_threshold: float
     capture_source: str
     input_device: str | None
     system_audio_device: str | None
@@ -58,6 +60,10 @@ def load_config() -> ServiceConfig:
         wake_poll_ms=int(os.getenv("PROMPTFLUX_WAKE_POLL_MS", "1400")),
         wake_cooldown_ms=int(os.getenv("PROMPTFLUX_WAKE_COOLDOWN_MS", "4500")),
         wake_buffer_ms=int(os.getenv("PROMPTFLUX_WAKE_BUFFER_MS", "1800")),
+        wake_silence_ms=int(os.getenv("PROMPTFLUX_WAKE_SILENCE_MS", "1200")),
+        wake_silence_rms_threshold=float(
+            os.getenv("PROMPTFLUX_WAKE_SILENCE_RMS_THRESHOLD", "0.010")
+        ),
         capture_source=os.getenv("PROMPTFLUX_CAPTURE_SOURCE", "microphone"),
         input_device=_nullable_env("PROMPTFLUX_INPUT_DEVICE"),
         system_audio_device=_nullable_env("PROMPTFLUX_SYSTEM_AUDIO_DEVICE"),

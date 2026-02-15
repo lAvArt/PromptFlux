@@ -8,6 +8,7 @@ export interface WatchdogConfig {
   transcriptionLanguage: string;
   triggerMode: "hold-to-talk" | "wake-word";
   wakeWord: string;
+  wakeSilenceMs: number;
   captureSource: "microphone" | "system-audio";
   microphoneDevice: string | null;
   systemAudioDevice: string | null;
@@ -44,6 +45,7 @@ export class SttProcessWatchdog {
       PROMPTFLUX_TRANSCRIPTION_LANGUAGE: this.config.transcriptionLanguage,
       PROMPTFLUX_TRIGGER_MODE: this.config.triggerMode,
       PROMPTFLUX_WAKE_WORD: this.config.wakeWord,
+      PROMPTFLUX_WAKE_SILENCE_MS: String(this.config.wakeSilenceMs),
       PROMPTFLUX_CAPTURE_SOURCE: this.config.captureSource,
       PROMPTFLUX_INPUT_DEVICE: this.config.microphoneDevice ?? "",
       PROMPTFLUX_SYSTEM_AUDIO_DEVICE: this.config.systemAudioDevice ?? "",
