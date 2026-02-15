@@ -16,6 +16,11 @@ class ServiceConfig:
     model_dir: Path
     compute_type: str
     transcription_language: str
+    trigger_mode: str
+    wake_word: str
+    wake_poll_ms: int
+    wake_cooldown_ms: int
+    wake_buffer_ms: int
     capture_source: str
     input_device: str | None
     system_audio_device: str | None
@@ -48,6 +53,11 @@ def load_config() -> ServiceConfig:
         model_dir=Path(os.getenv("PROMPTFLUX_MODEL_DIR", str(default_model_dir))),
         compute_type=os.getenv("PROMPTFLUX_COMPUTE_TYPE", "int8"),
         transcription_language=os.getenv("PROMPTFLUX_TRANSCRIPTION_LANGUAGE", "auto"),
+        trigger_mode=os.getenv("PROMPTFLUX_TRIGGER_MODE", "hold-to-talk"),
+        wake_word=os.getenv("PROMPTFLUX_WAKE_WORD", "hey promptflux").strip().lower(),
+        wake_poll_ms=int(os.getenv("PROMPTFLUX_WAKE_POLL_MS", "1400")),
+        wake_cooldown_ms=int(os.getenv("PROMPTFLUX_WAKE_COOLDOWN_MS", "4500")),
+        wake_buffer_ms=int(os.getenv("PROMPTFLUX_WAKE_BUFFER_MS", "1800")),
         capture_source=os.getenv("PROMPTFLUX_CAPTURE_SOURCE", "microphone"),
         input_device=_nullable_env("PROMPTFLUX_INPUT_DEVICE"),
         system_audio_device=_nullable_env("PROMPTFLUX_SYSTEM_AUDIO_DEVICE"),

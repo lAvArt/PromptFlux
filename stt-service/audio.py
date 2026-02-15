@@ -12,6 +12,7 @@ class RingBufferAudioCapture:
         sample_rate: int,
         channels: int,
         pre_buffer_ms: int,
+        ring_buffer_ms: int | None = None,
         capture_source: str = "microphone",
         input_device: str | None = None,
         system_audio_device: str | None = None,
@@ -21,11 +22,15 @@ class RingBufferAudioCapture:
         self.channels = 1
         self.requested_channels = max(1, channels)
         self.pre_buffer_samples = max(1, int(sample_rate * pre_buffer_ms / 1000))
+        self.ring_buffer_samples = max(
+            self.pre_buffer_samples,
+            int(sample_rate * (ring_buffer_ms if ring_buffer_ms is not None else pre_buffer_ms) / 1000),
+        )
         self.capture_source = capture_source
         self.input_device = input_device
         self.system_audio_device = system_audio_device
 
-        self._ring = np.zeros((self.pre_buffer_samples, self.channels), dtype=np.float32)
+        self._ring = np.zeros((self.ring_buffer_samples, self.channels), dtype=np.float32)
         self._write_idx = 0
         self._filled = 0
 
@@ -94,7 +99,7 @@ class RingBufferAudioCapture:
 
     def begin_recording(self) -> None:
         with self._lock:
-            self._frozen_prefix = self._read_ring_buffer()
+            self._frozen_prefix = self._read_latest_samples(self.pre_buffer_samples)
             self._recording_chunks = []
             self._recording = True
 
@@ -110,6 +115,15 @@ class RingBufferAudioCapture:
 
         merged = np.concatenate(chunks, axis=0)
         return merged.reshape(-1).astype(np.float32, copy=False)
+
+    def get_recent_audio(self, max_ms: int | None = None) -> np.ndarray:
+        if max_ms is None:
+            sample_count = self.ring_buffer_samples
+        else:
+            sample_count = max(1, int(self.sample_rate * max_ms / 1000))
+        with self._lock:
+            block = self._read_latest_samples(sample_count)
+        return block.reshape(-1).astype(np.float32, copy=False)
 
     def _audio_callback(self, indata, frames, _time, status) -> None:
         if status:
@@ -129,28 +143,28 @@ class RingBufferAudioCapture:
 
     def _write_ring(self, block: np.ndarray) -> None:
         frames = block.shape[0]
-        if frames >= self.pre_buffer_samples:
-            self._ring[:] = block[-self.pre_buffer_samples :]
+        if frames >= self.ring_buffer_samples:
+            self._ring[:] = block[-self.ring_buffer_samples :]
             self._write_idx = 0
-            self._filled = self.pre_buffer_samples
+            self._filled = self.ring_buffer_samples
             return
 
         end = self._write_idx + frames
-        if end <= self.pre_buffer_samples:
+        if end <= self.ring_buffer_samples:
             self._ring[self._write_idx : end] = block
         else:
-            first = self.pre_buffer_samples - self._write_idx
+            first = self.ring_buffer_samples - self._write_idx
             self._ring[self._write_idx :] = block[:first]
-            self._ring[: end % self.pre_buffer_samples] = block[first:]
+            self._ring[: end % self.ring_buffer_samples] = block[first:]
 
-        self._write_idx = end % self.pre_buffer_samples
-        self._filled = min(self.pre_buffer_samples, self._filled + frames)
+        self._write_idx = end % self.ring_buffer_samples
+        self._filled = min(self.ring_buffer_samples, self._filled + frames)
 
     def _read_ring_buffer(self) -> np.ndarray:
         if self._filled == 0:
             return np.zeros((0, self.channels), dtype=np.float32)
 
-        if self._filled < self.pre_buffer_samples:
+        if self._filled < self.ring_buffer_samples:
             return np.array(self._ring[: self._filled], copy=True)
 
         if self._write_idx == 0:
@@ -163,6 +177,16 @@ class RingBufferAudioCapture:
             ),
             axis=0,
         ).copy()
+
+    def _read_latest_samples(self, sample_count: int) -> np.ndarray:
+        if self._filled == 0:
+            return np.zeros((0, self.channels), dtype=np.float32)
+
+        ordered = self._read_ring_buffer()
+        take = min(sample_count, ordered.shape[0])
+        if take <= 0:
+            return np.zeros((0, self.channels), dtype=np.float32)
+        return np.array(ordered[-take:], copy=True)
 
     def _resolve_device_index(
         self,

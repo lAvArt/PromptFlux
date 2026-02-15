@@ -17,6 +17,9 @@ type SettingsSaveRequest = {
   hotkey: string;
   outputMode: AppConfig["outputMode"];
   transcriptionLanguage: AppConfig["transcriptionLanguage"];
+  triggerMode: AppConfig["triggerMode"];
+  wakeWord: string;
+  wakeRecordMs: number;
   captureSource: CaptureSource;
   microphoneDevice: string | null;
   systemAudioDevice: string | null;
@@ -32,6 +35,8 @@ let shutdownStarted = false;
 let reconnectLoopRunning = false;
 let ipcRegistered = false;
 let pipeGuardsRegistered = false;
+let recordingActive = false;
+let wakeAutoStopTimer: NodeJS.Timeout | null = null;
 
 let sttServerScriptPath = "";
 let listDevicesScriptPath = "";
@@ -133,6 +138,59 @@ function setRendererOutputMode(mode: AppConfig["outputMode"]): void {
   invokeRenderer("__promptfluxSetOutputMode", mode);
 }
 
+function clearWakeAutoStopTimer(): void {
+  if (wakeAutoStopTimer) {
+    clearTimeout(wakeAutoStopTimer);
+    wakeAutoStopTimer = null;
+  }
+}
+
+function beginRecording(reason: "hotkey" | "wake"): void {
+  if (recordingActive) {
+    return;
+  }
+  if (!sttClient?.isConnected()) {
+    setRendererStatus("error");
+    setRendererTranscript("STT service is not connected.", "error");
+    return;
+  }
+
+  recordingActive = true;
+  sttClient.send("START");
+  setRendererStatus("recording");
+  if (reason === "wake") {
+    setRendererTranscript(`Wake word detected: "${appConfig.wakeWord}". Listening...`, "recording");
+    const duration = Math.max(1200, appConfig.wakeRecordMs);
+    clearWakeAutoStopTimer();
+    wakeAutoStopTimer = setTimeout(() => {
+      stopRecording("wake-timeout");
+    }, duration);
+  } else {
+    setRendererTranscript("Listening...", "recording");
+  }
+}
+
+function stopRecording(reason: "hotkey" | "wake-timeout"): void {
+  if (!recordingActive) {
+    return;
+  }
+  clearWakeAutoStopTimer();
+  recordingActive = false;
+
+  if (!sttClient?.isConnected()) {
+    setRendererStatus("error");
+    setRendererTranscript("STT service is not connected.", "error");
+    return;
+  }
+
+  setRendererStatus("transcribing");
+  setRendererTranscript(
+    reason === "wake-timeout" ? "Wake capture complete. Transcribing..." : "Transcribing...",
+    "transcribing",
+  );
+  sttClient.send("STOP", { language: appConfig.transcriptionLanguage });
+}
+
 function createWatchdog(): SttProcessWatchdog {
   return new SttProcessWatchdog(
     {
@@ -141,6 +199,8 @@ function createWatchdog(): SttProcessWatchdog {
       preBufferMs: appConfig.preBufferMs,
       modelPath: appConfig.modelPath,
       transcriptionLanguage: appConfig.transcriptionLanguage,
+      triggerMode: appConfig.triggerMode,
+      wakeWord: appConfig.wakeWord,
       captureSource: appConfig.captureSource,
       microphoneDevice: appConfig.microphoneDevice,
       systemAudioDevice: appConfig.systemAudioDevice,
@@ -160,9 +220,25 @@ function createWsClient(): SttWebSocketClient {
   return new SttWebSocketClient(appConfig.sttPort, {
     onReady: () => {
       setRendererStatus("idle");
-      setRendererTranscript("Hold Ctrl+Shift+Space and start speaking.", "neutral");
+      setRendererTranscript(
+        appConfig.triggerMode === "wake-word"
+          ? `Wake-word mode active. Say "${appConfig.wakeWord}" to start recording.`
+          : "Hold Ctrl+Shift+Space and start speaking.",
+        "neutral",
+      );
+    },
+    onWake: ({ wake_word }) => {
+      if (appConfig.triggerMode !== "wake-word") {
+        return;
+      }
+      if (wake_word && wake_word !== appConfig.wakeWord) {
+        appConfig.wakeWord = wake_word;
+      }
+      beginRecording("wake");
     },
     onResult: async ({ text, meta }) => {
+      recordingActive = false;
+      clearWakeAutoStopTimer();
       await handleOutput(text, appConfig.outputMode);
       safeLog("[promptflux] transcription", {
         length: text.length,
@@ -175,6 +251,8 @@ function createWsClient(): SttWebSocketClient {
       hotkeyController.resetState();
     },
     onError: ({ code, message }) => {
+      recordingActive = false;
+      clearWakeAutoStopTimer();
       safeError("[stt:error]", code, message);
       setRendererTranscript(`${code}: ${message}`, "error");
       setRendererStatus("error");
@@ -212,24 +290,10 @@ async function ensureSocketConnected(): Promise<void> {
 function registerRecordHotkey(): void {
   hotkeyController.registerHoldToTalkHotkey(appConfig.hotkey, {
     onStart: () => {
-      if (!sttClient?.isConnected()) {
-        setRendererStatus("error");
-        setRendererTranscript("STT service is not connected.", "error");
-        return;
-      }
-      sttClient.send("START");
-      setRendererStatus("recording");
-      setRendererTranscript("Listening...", "recording");
+      beginRecording("hotkey");
     },
     onStop: () => {
-      if (!sttClient?.isConnected()) {
-        setRendererStatus("error");
-        setRendererTranscript("STT service is not connected.", "error");
-        return;
-      }
-      setRendererStatus("transcribing");
-      setRendererTranscript("Transcribing...", "transcribing");
-      sttClient.send("STOP", { language: appConfig.transcriptionLanguage });
+      stopRecording("hotkey");
     },
     onError: (message) => {
       safeError("[hotkey]", message);
@@ -263,6 +327,16 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
     transcriptionLanguageRaw === "auto" || /^[a-z]{2,3}(?:-[a-z]{2})?$/.test(transcriptionLanguageRaw)
       ? transcriptionLanguageRaw
       : "auto";
+  const triggerMode =
+    source.triggerMode === "wake-word" ? ("wake-word" as const) : ("hold-to-talk" as const);
+  const wakeWord =
+    typeof source.wakeWord === "string" && source.wakeWord.trim()
+      ? source.wakeWord.trim().toLowerCase()
+      : appConfig.wakeWord;
+  const wakeRecordMsRaw = Number(source.wakeRecordMs);
+  const wakeRecordMs = Number.isFinite(wakeRecordMsRaw)
+    ? Math.max(1200, Math.min(30_000, Math.round(wakeRecordMsRaw)))
+    : appConfig.wakeRecordMs;
   const captureSource =
     source.captureSource === "system-audio" ? "system-audio" : ("microphone" as const);
 
@@ -279,10 +353,20 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
     return trimmed.length > 0 ? trimmed : null;
   };
 
+  if (triggerMode === "wake-word" && captureSource !== "microphone") {
+    throw new Error("Wake-word mode requires capture source = microphone.");
+  }
+  if (triggerMode === "wake-word" && !wakeWord.trim()) {
+    throw new Error("Wake word is required for wake-word mode.");
+  }
+
   return {
     hotkey,
     outputMode,
     transcriptionLanguage,
+    triggerMode,
+    wakeWord,
+    wakeRecordMs,
     captureSource,
     microphoneDevice: sanitizeDevice(source.microphoneDevice),
     systemAudioDevice: sanitizeDevice(source.systemAudioDevice),
@@ -318,6 +402,9 @@ function registerIpcHandlers(): void {
       hotkey: next.hotkey,
       outputMode: next.outputMode,
       transcriptionLanguage: next.transcriptionLanguage,
+      triggerMode: next.triggerMode,
+      wakeWord: next.wakeWord,
+      wakeRecordMs: next.wakeRecordMs,
       captureSource: next.captureSource,
       microphoneDevice: next.microphoneDevice,
       systemAudioDevice: next.systemAudioDevice,
@@ -335,6 +422,9 @@ function registerIpcHandlers(): void {
     }
 
     const restartRequired =
+      previous.triggerMode !== appConfig.triggerMode ||
+      previous.wakeWord !== appConfig.wakeWord ||
+      previous.transcriptionLanguage !== appConfig.transcriptionLanguage ||
       previous.captureSource !== appConfig.captureSource ||
       previous.microphoneDevice !== appConfig.microphoneDevice ||
       previous.systemAudioDevice !== appConfig.systemAudioDevice ||
@@ -344,7 +434,7 @@ function registerIpcHandlers(): void {
     setRendererOutputMode(appConfig.outputMode);
     if (restartRequired) {
       setRendererTranscript(
-        "Audio capture settings saved. Restart PromptFlux to apply input/source changes.",
+        "Listener settings saved. Restart PromptFlux to apply trigger/capture changes.",
         "neutral",
       );
     }
@@ -360,6 +450,9 @@ async function bootstrap(): Promise<void> {
     hotkey: appConfig.hotkey,
     outputMode: appConfig.outputMode,
     transcriptionLanguage: appConfig.transcriptionLanguage,
+    triggerMode: appConfig.triggerMode,
+    wakeWord: appConfig.wakeWord,
+    wakeRecordMs: appConfig.wakeRecordMs,
     captureSource: appConfig.captureSource,
     sttPort: appConfig.sttPort,
     preBufferMs: appConfig.preBufferMs,

@@ -5,11 +5,15 @@ import os from "node:os";
 export type OutputMode = "clipboard-only" | "auto-paste";
 export type CaptureSource = "microphone" | "system-audio";
 export type TranscriptionLanguage = "auto" | string;
+export type TriggerMode = "hold-to-talk" | "wake-word";
 
 export interface AppConfig {
   hotkey: string;
   outputMode: OutputMode;
   transcriptionLanguage: TranscriptionLanguage;
+  triggerMode: TriggerMode;
+  wakeWord: string;
+  wakeRecordMs: number;
   captureSource: CaptureSource;
   microphoneDevice: string | null;
   systemAudioDevice: string | null;
@@ -25,6 +29,9 @@ const DEFAULT_CONFIG: AppConfig = {
   hotkey: "Ctrl+Shift+Space",
   outputMode: "clipboard-only",
   transcriptionLanguage: "auto",
+  triggerMode: "hold-to-talk",
+  wakeWord: "hey promptflux",
+  wakeRecordMs: 5000,
   captureSource: "microphone",
   microphoneDevice: null,
   systemAudioDevice: null,
