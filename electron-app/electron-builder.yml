@@ -1,0 +1,8 @@
+appId: com.promptflux.app
+productName: PromptFlux
+files:
+  - dist/**
+  - src/renderer/**
+extraResources: []
+win:
+  target: nsis

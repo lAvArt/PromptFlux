@@ -1,0 +1,25 @@
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# Node/Electron
+electron-app/node_modules/
+electron-app/dist/
+electron-app/.cache/
+
+# Python
+stt-service/.venv/
+stt-service/__pycache__/
+stt-service/*.pyc
+stt-service/build/
+stt-service/dist/
+
+# Runtime data
+.env
+*.tmp
