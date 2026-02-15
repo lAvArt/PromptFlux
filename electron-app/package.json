@@ -8,8 +8,12 @@
     "build": "tsc -p tsconfig.json",
     "start": "npm run build && electron ."
   },
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
   "devDependencies": {
     "@types/node": "^20.17.0",
+    "@types/ws": "^8.5.14",
     "electron": "^31.7.7",
     "typescript": "^5.8.2"
   }

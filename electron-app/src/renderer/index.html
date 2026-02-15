@@ -33,12 +33,24 @@
         color: #bbcadf;
         line-height: 1.4;
       }
+      .status {
+        margin-top: 10px;
+        font-size: 13px;
+        color: #8ec9ff;
+      }
     </style>
   </head>
   <body>
     <div class="card">
       <h1>PromptFlux v0.1</h1>
-      <p>Electron shell is running. Next step: hotkey + WebSocket + clipboard flow.</p>
+      <p>Electron shell is running.</p>
+      <p class="status" id="status">Status: starting</p>
     </div>
+    <script>
+      window.__promptfluxSetStatus = function (value) {
+        const node = document.getElementById("status");
+        if (node) node.textContent = "Status: " + value;
+      };
+    </script>
   </body>
 </html>
