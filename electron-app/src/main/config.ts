@@ -7,6 +7,7 @@ export type OutputMode = "clipboard-only" | "auto-paste";
 export type CaptureSource = "microphone" | "system-audio";
 export type TranscriptionLanguage = "auto" | string;
 export type TriggerMode = "hold-to-talk" | "press-to-talk" | "wake-word";
+export type WakeSilenceSensitivity = "low" | "medium" | "high";
 
 export interface AppConfig {
   hotkey: string;
@@ -15,6 +16,7 @@ export interface AppConfig {
   triggerMode: TriggerMode;
   wakeWord: string;
   wakeSilenceMs: number;
+  wakeSilenceSensitivity: WakeSilenceSensitivity;
   wakeRecordMs: number;
   soundCueEnabled: boolean;
   soundCueVolume: number;
@@ -43,6 +45,7 @@ const DEFAULT_CONFIG: AppConfig = {
   triggerMode: "hold-to-talk",
   wakeWord: "hey promptflux",
   wakeSilenceMs: 1200,
+  wakeSilenceSensitivity: "medium",
   wakeRecordMs: 5000,
   soundCueEnabled: true,
   soundCueVolume: 45,
@@ -74,6 +77,13 @@ export function createMobileBridgeToken(): string {
 
 function sanitizeConfig(raw: Partial<AppConfig>): AppConfig {
   const merged = { ...DEFAULT_CONFIG, ...raw };
+  const sensitivityRaw = String((merged as { wakeSilenceSensitivity?: unknown }).wakeSilenceSensitivity ?? "")
+    .trim()
+    .toLowerCase();
+  merged.wakeSilenceSensitivity =
+    sensitivityRaw === "low" || sensitivityRaw === "high" || sensitivityRaw === "medium"
+      ? (sensitivityRaw as WakeSilenceSensitivity)
+      : DEFAULT_CONFIG.wakeSilenceSensitivity;
   const normalizedPort = Number(merged.mobileBridgePort);
   merged.mobileBridgePort = Number.isFinite(normalizedPort)
     ? Math.max(1024, Math.min(65535, Math.round(normalizedPort)))

@@ -23,6 +23,7 @@ type SettingsSaveRequest = {
   triggerMode: AppConfig["triggerMode"];
   wakeWord: string;
   wakeSilenceMs: number;
+  wakeSilenceSensitivity: AppConfig["wakeSilenceSensitivity"];
   wakeRecordMs: number;
   soundCueEnabled: boolean;
   soundCueVolume: number;
@@ -265,6 +266,7 @@ function createWatchdog(): SttProcessWatchdog {
       triggerMode: appConfig.triggerMode,
       wakeWord: appConfig.wakeWord,
       wakeSilenceMs: appConfig.wakeSilenceMs,
+      wakeSilenceSensitivity: appConfig.wakeSilenceSensitivity,
       captureSource: appConfig.captureSource,
       microphoneDevice: appConfig.microphoneDevice,
       systemAudioDevice: appConfig.systemAudioDevice,
@@ -559,6 +561,16 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
   const wakeSilenceMs = Number.isFinite(wakeSilenceMsRaw)
     ? Math.max(400, Math.min(6000, Math.round(wakeSilenceMsRaw)))
     : appConfig.wakeSilenceMs;
+  const wakeSilenceSensitivityRaw =
+    typeof source.wakeSilenceSensitivity === "string"
+      ? source.wakeSilenceSensitivity.trim().toLowerCase()
+      : "";
+  const wakeSilenceSensitivity =
+    wakeSilenceSensitivityRaw === "low" ||
+    wakeSilenceSensitivityRaw === "high" ||
+    wakeSilenceSensitivityRaw === "medium"
+      ? wakeSilenceSensitivityRaw
+      : appConfig.wakeSilenceSensitivity;
   const asBoolean = (value: unknown, fallback: boolean): boolean =>
     typeof value === "boolean" ? value : fallback;
   const soundCueEnabled = asBoolean(source.soundCueEnabled, appConfig.soundCueEnabled);
@@ -608,6 +620,7 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
     triggerMode,
     wakeWord,
     wakeSilenceMs,
+    wakeSilenceSensitivity,
     wakeRecordMs,
     soundCueEnabled,
     soundCueVolume,
@@ -656,6 +669,7 @@ function registerIpcHandlers(): void {
       triggerMode: next.triggerMode,
       wakeWord: next.wakeWord,
       wakeSilenceMs: next.wakeSilenceMs,
+      wakeSilenceSensitivity: next.wakeSilenceSensitivity,
       wakeRecordMs: next.wakeRecordMs,
       soundCueEnabled: next.soundCueEnabled,
       soundCueVolume: next.soundCueVolume,
@@ -685,6 +699,7 @@ function registerIpcHandlers(): void {
       previous.triggerMode !== appConfig.triggerMode ||
       previous.wakeWord !== appConfig.wakeWord ||
       previous.wakeSilenceMs !== appConfig.wakeSilenceMs ||
+      previous.wakeSilenceSensitivity !== appConfig.wakeSilenceSensitivity ||
       previous.transcriptionLanguage !== appConfig.transcriptionLanguage ||
       previous.captureSource !== appConfig.captureSource ||
       previous.microphoneDevice !== appConfig.microphoneDevice ||
@@ -760,6 +775,7 @@ async function bootstrap(): Promise<void> {
     triggerMode: appConfig.triggerMode,
     wakeWord: appConfig.wakeWord,
     wakeSilenceMs: appConfig.wakeSilenceMs,
+    wakeSilenceSensitivity: appConfig.wakeSilenceSensitivity,
     wakeRecordMs: appConfig.wakeRecordMs,
     soundCueEnabled: appConfig.soundCueEnabled,
     soundCueVolume: appConfig.soundCueVolume,

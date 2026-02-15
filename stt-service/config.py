@@ -22,7 +22,9 @@ class ServiceConfig:
     wake_cooldown_ms: int
     wake_buffer_ms: int
     wake_silence_ms: int
+    wake_silence_sensitivity: str
     wake_silence_rms_threshold: float
+    wake_silence_start_grace_ms: int
     wake_match_threshold: float
     capture_source: str
     input_device: str | None
@@ -44,8 +46,21 @@ def _nullable_env(name: str) -> str | None:
     return trimmed if trimmed else None
 
 
+def _wake_silence_sensitivity() -> str:
+    raw = os.getenv("PROMPTFLUX_WAKE_SILENCE_SENSITIVITY", "medium").strip().lower()
+    if raw in {"low", "medium", "high"}:
+        return raw
+    return "medium"
+
+
 def load_config() -> ServiceConfig:
     default_model_dir = _appdata_dir() / "promptflux" / "models" / "small-int8"
+    wake_silence_sensitivity = _wake_silence_sensitivity()
+    wake_threshold_default_by_sensitivity = {
+        "low": "0.006",
+        "medium": "0.004",
+        "high": "0.0025",
+    }
     return ServiceConfig(
         host=os.getenv("PROMPTFLUX_STT_HOST", "127.0.0.1"),
         port=int(os.getenv("PROMPTFLUX_STT_PORT", "9876")),
@@ -62,8 +77,15 @@ def load_config() -> ServiceConfig:
         wake_cooldown_ms=int(os.getenv("PROMPTFLUX_WAKE_COOLDOWN_MS", "4500")),
         wake_buffer_ms=int(os.getenv("PROMPTFLUX_WAKE_BUFFER_MS", "1800")),
         wake_silence_ms=int(os.getenv("PROMPTFLUX_WAKE_SILENCE_MS", "1200")),
+        wake_silence_sensitivity=wake_silence_sensitivity,
         wake_silence_rms_threshold=float(
-            os.getenv("PROMPTFLUX_WAKE_SILENCE_RMS_THRESHOLD", "0.010")
+            os.getenv(
+                "PROMPTFLUX_WAKE_SILENCE_RMS_THRESHOLD",
+                wake_threshold_default_by_sensitivity[wake_silence_sensitivity],
+            )
+        ),
+        wake_silence_start_grace_ms=int(
+            os.getenv("PROMPTFLUX_WAKE_SILENCE_START_GRACE_MS", "1400")
         ),
         wake_match_threshold=float(os.getenv("PROMPTFLUX_WAKE_MATCH_THRESHOLD", "0.82")),
         capture_source=os.getenv("PROMPTFLUX_CAPTURE_SOURCE", "microphone"),

@@ -183,9 +183,15 @@ class PromptFluxSttService:
             self.silence_stop_task = None
 
     async def _silence_stop_monitor(self) -> None:
-        threshold = max(0.001, float(self.config.wake_silence_rms_threshold))
+        threshold = max(0.0008, float(self.config.wake_silence_rms_threshold))
+        # Use hysteresis so small RMS fluctuations don't flip speech/silence rapidly.
+        speech_threshold = max(threshold * 1.25, threshold + 0.0012)
         required_ms = max(400, int(self.config.wake_silence_ms))
         required_s = required_ms / 1000.0
+        start_grace_ms = max(300, int(self.config.wake_silence_start_grace_ms))
+        start_grace_s = start_grace_ms / 1000.0
+        monitor_started_at = time.monotonic()
+        speech_detected = False
         silence_started_at: float | None = None
 
         while not self.shutdown_event.is_set():
@@ -195,11 +201,25 @@ class PromptFluxSttService:
             if self.transcribing_active:
                 return
 
+            now = time.monotonic()
             rms = self._recent_rms(250)
+            if rms >= speech_threshold:
+                speech_detected = True
+                silence_started_at = None
+                continue
+
+            # Give the user a short grace window after recording starts.
+            if not speech_detected and now - monitor_started_at < start_grace_s:
+                continue
+
+            # Don't force-stop before speech has been detected; max-duration timer remains the safety bound.
+            if not speech_detected:
+                continue
+
             if rms <= threshold:
                 if silence_started_at is None:
-                    silence_started_at = time.monotonic()
-                elif time.monotonic() - silence_started_at >= required_s:
+                    silence_started_at = now
+                elif now - silence_started_at >= required_s:
                     logger.info("Silence threshold reached; requesting auto stop")
                     await self.broadcast_message("AUTO_STOP", {"reason": "silence"})
                     return

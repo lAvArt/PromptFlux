@@ -783,6 +783,15 @@
                 <div class="hint">Hard recording limit (wake-word and press-and-release).</div>
               </div>
             </div>
+            <div class="field" id="wake-sensitivity-field">
+              <label for="wake-sensitivity-select">Silence Sensitivity</label>
+              <select id="wake-sensitivity-select">
+                <option value="low">Low (needs louder speech)</option>
+                <option value="medium">Medium</option>
+                <option value="high">High (picks up quieter speech)</option>
+              </select>
+              <div class="hint">Use `High` if the app stops while you are still talking (distance/noise-canceling mics).</div>
+            </div>
           </div>
 
           <div class="form-grid settings-panel" data-panel="mobile" hidden>
@@ -862,6 +871,7 @@
       const wakeWordInput = document.getElementById("wake-word-input");
       const wakeSilenceInput = document.getElementById("wake-silence-input");
       const wakeDurationInput = document.getElementById("wake-duration-input");
+      const wakeSensitivitySelect = document.getElementById("wake-sensitivity-select");
       const prebufferInput = document.getElementById("prebuffer-input");
       const micDeviceSelect = document.getElementById("mic-device-select");
       const sysDeviceSelect = document.getElementById("sys-device-select");
@@ -870,6 +880,7 @@
       const wakeWordField = document.getElementById("wake-word-field");
       const wakeSilenceField = document.getElementById("wake-silence-field");
       const wakeDurationField = document.getElementById("wake-duration-field");
+      const wakeSensitivityField = document.getElementById("wake-sensitivity-field");
       const mobileEnabledInput = document.getElementById("mobile-enabled-input");
       const mobilePortInput = document.getElementById("mobile-port-input");
       const mobileTokenInput = document.getElementById("mobile-token-input");
@@ -1172,6 +1183,7 @@
         wakeWordField.style.display = triggerMode === "wake-word" ? "block" : "none";
         wakeSilenceField.style.display = usesSilenceAutoStop ? "block" : "none";
         wakeDurationField.style.display = usesSilenceAutoStop ? "block" : "none";
+        wakeSensitivityField.style.display = usesSilenceAutoStop ? "block" : "none";
       }
 
       function hydrateForm() {
@@ -1191,6 +1203,7 @@
         captureSourceSelect.value = state.config.captureSource || "microphone";
         wakeWordInput.value = state.config.wakeWord || "hey promptflux";
         wakeSilenceInput.value = String(state.config.wakeSilenceMs ?? 1200);
+        wakeSensitivitySelect.value = state.config.wakeSilenceSensitivity || "medium";
         wakeDurationInput.value = String(state.config.wakeRecordMs ?? 5000);
         prebufferInput.value = String(state.config.preBufferMs ?? 500);
         mobileEnabledInput.checked = Boolean(state.config.mobileBridgeEnabled);
@@ -1249,6 +1262,7 @@
           triggerMode: triggerModeSelect.value,
           wakeWord: wakeWordInput.value,
           wakeSilenceMs: Number(wakeSilenceInput.value || 1200),
+          wakeSilenceSensitivity: wakeSensitivitySelect.value,
           wakeRecordMs: Number(wakeDurationInput.value || 5000),
           mobileBridgeEnabled: mobileEnabledInput.checked,
           mobileBridgePort: Number(mobilePortInput.value || 32123),
