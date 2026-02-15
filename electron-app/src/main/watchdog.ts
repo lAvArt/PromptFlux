@@ -55,11 +55,19 @@ export class SttProcessWatchdog {
     this.child = child;
 
     child.stdout?.on("data", (data) => {
-      this.handlers.onStdout?.(String(data));
+      try {
+        this.handlers.onStdout?.(String(data));
+      } catch {
+        // Never allow logging handlers to crash the main process.
+      }
     });
 
     child.stderr?.on("data", (data) => {
-      this.handlers.onStderr?.(String(data));
+      try {
+        this.handlers.onStderr?.(String(data));
+      } catch {
+        // Never allow logging handlers to crash the main process.
+      }
     });
 
     child.on("exit", (code) => {
@@ -69,7 +77,11 @@ export class SttProcessWatchdog {
       }
       const message = this.handleCrashAndRestart();
       if (message) {
-        this.handlers.onFatalExit?.(message);
+        try {
+          this.handlers.onFatalExit?.(message);
+        } catch {
+          // Never allow logging handlers to crash the main process.
+        }
       }
     });
   }

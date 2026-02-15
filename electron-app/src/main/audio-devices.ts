@@ -39,13 +39,17 @@ export async function listAudioDevices(scriptPath: string): Promise<AudioDevices
 
     child.on("exit", (code) => {
       clearTimeout(timeout);
-      if (code !== 0) {
-        if (stderr.trim()) {
-          console.error("[devices]", stderr.trim());
+        if (code !== 0) {
+          if (stderr.trim()) {
+            try {
+              console.error("[devices]", stderr.trim());
+            } catch {
+              // Ignore logging failures (e.g. broken stderr pipe).
+            }
+          }
+          resolve({ microphones: [], systemAudio: [] });
+          return;
         }
-        resolve({ microphones: [], systemAudio: [] });
-        return;
-      }
 
       try {
         const parsed = JSON.parse(stdout) as AudioDevicesPayload;

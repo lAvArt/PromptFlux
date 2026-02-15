@@ -30,11 +30,58 @@ const hotkeyController = new HotkeyController();
 let shutdownStarted = false;
 let reconnectLoopRunning = false;
 let ipcRegistered = false;
+let pipeGuardsRegistered = false;
 
 let sttServerScriptPath = "";
 let listDevicesScriptPath = "";
 
 const OUTPUT_TOGGLE_HOTKEY = "CommandOrControl+Shift+Alt+V";
+
+function safeLog(...args: unknown[]): void {
+  try {
+    console.log(...args);
+  } catch {
+    // Ignore logging pipe errors (e.g. EPIPE) in detached/no-console environments.
+  }
+}
+
+function safeError(...args: unknown[]): void {
+  try {
+    console.error(...args);
+  } catch {
+    // Ignore logging pipe errors (e.g. EPIPE) in detached/no-console environments.
+  }
+}
+
+function isBrokenPipeError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  const message = String((error as { message?: unknown } | null)?.message ?? "");
+  return code === "EPIPE" || message.includes("EPIPE: broken pipe");
+}
+
+function registerProcessPipeGuards(): void {
+  if (pipeGuardsRegistered) {
+    return;
+  }
+  pipeGuardsRegistered = true;
+
+  const streamErrorHandler = (error: unknown) => {
+    if (isBrokenPipeError(error)) {
+      return;
+    }
+    safeError("[promptflux] process stream error", error);
+  };
+
+  process.stdout?.on?.("error", streamErrorHandler);
+  process.stderr?.on?.("error", streamErrorHandler);
+
+  process.on("uncaughtException", (error) => {
+    if (isBrokenPipeError(error)) {
+      return;
+    }
+    throw error;
+  });
+}
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -97,10 +144,10 @@ function createWatchdog(): SttProcessWatchdog {
       systemAudioDevice: appConfig.systemAudioDevice,
     },
     {
-      onStdout: (line) => console.log("[stt]", line.trim()),
-      onStderr: (line) => console.error("[stt]", line.trim()),
+      onStdout: (line) => safeLog("[stt]", line.trim()),
+      onStderr: (line) => safeError("[stt]", line.trim()),
       onFatalExit: (message) => {
-        console.error("[stt]", message);
+        safeError("[stt]", message);
         setRendererStatus("error");
       },
     },
@@ -115,7 +162,7 @@ function createWsClient(): SttWebSocketClient {
     },
     onResult: async ({ text, meta }) => {
       await handleOutput(text, appConfig.outputMode);
-      console.log("[promptflux] transcription", {
+      safeLog("[promptflux] transcription", {
         length: text.length,
         durationMs: meta?.duration_ms ?? 0,
       });
@@ -126,7 +173,7 @@ function createWsClient(): SttWebSocketClient {
       hotkeyController.resetState();
     },
     onError: ({ code, message }) => {
-      console.error("[stt:error]", code, message);
+      safeError("[stt:error]", code, message);
       setRendererTranscript(`${code}: ${message}`, "error");
       setRendererStatus("error");
       setTimeout(() => setRendererStatus("idle"), 3000);
@@ -183,7 +230,7 @@ function registerRecordHotkey(): void {
       sttClient.send("STOP");
     },
     onError: (message) => {
-      console.error("[hotkey]", message);
+      safeError("[hotkey]", message);
       setRendererStatus("error");
       setRendererTranscript(message, "error");
     },
@@ -295,8 +342,9 @@ function registerIpcHandlers(): void {
 }
 
 async function bootstrap(): Promise<void> {
+  registerProcessPipeGuards();
   appConfig = loadConfig();
-  console.log("[promptflux] config loaded", {
+  safeLog("[promptflux] config loaded", {
     hotkey: appConfig.hotkey,
     outputMode: appConfig.outputMode,
     captureSource: appConfig.captureSource,
@@ -346,7 +394,7 @@ async function bootstrap(): Promise<void> {
   });
 
   if (!toggleRegistered) {
-    console.error("[promptflux] failed to register output toggle hotkey", OUTPUT_TOGGLE_HOTKEY);
+    safeError("[promptflux] failed to register output toggle hotkey", OUTPUT_TOGGLE_HOTKEY);
   }
 }
 
