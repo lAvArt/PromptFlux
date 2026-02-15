@@ -24,6 +24,7 @@ def main() -> None:
     microphones: list[dict] = []
     outputs: list[dict] = []
     wasapi_outputs: list[dict] = []
+    wasapi_inputs: list[dict] = []
 
     for index, device in enumerate(devices):
         hostapi = _hostapi_name(int(device.get("hostapi", -1)))
@@ -31,15 +32,21 @@ def main() -> None:
 
         max_input = int(device.get("max_input_channels", 0))
         if max_input > 0:
-            microphones.append(
-                {
-                    "id": str(index),
-                    "name": name,
-                    "hostapi": hostapi,
-                    "channels": max_input,
-                    "isDefault": index == default_input,
-                }
-            )
+            mic_item = {
+                "id": str(index),
+                "name": name,
+                "hostapi": hostapi,
+                "channels": max_input,
+                "isDefault": index == default_input,
+            }
+            microphones.append(mic_item)
+            if "WASAPI" in hostapi.upper():
+                wasapi_inputs.append(
+                    {
+                        **mic_item,
+                        "name": f"{name} [Input Capture]",
+                    }
+                )
 
         max_output = int(device.get("max_output_channels", 0))
         if max_output > 0:
@@ -54,9 +61,10 @@ def main() -> None:
             if "WASAPI" in hostapi.upper():
                 wasapi_outputs.append(item)
 
+    system_audio_devices = wasapi_outputs + wasapi_inputs
     payload = {
         "microphones": microphones,
-        "systemAudio": wasapi_outputs if wasapi_outputs else outputs,
+        "systemAudio": system_audio_devices if system_audio_devices else outputs,
     }
     print(json.dumps(payload))
 

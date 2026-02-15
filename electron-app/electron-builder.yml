@@ -1,8 +1,12 @@
 appId: com.promptflux.app
 productName: PromptFlux
 files:
-  - dist/**
+  - dist/main/**
   - src/renderer/**
-extraResources: []
+extraResources:
+  - from: ../stt-service/dist/promptflux-stt
+    to: stt-service/bin/promptflux-stt
+  - from: ../stt-service/dist/promptflux-list-devices
+    to: stt-service/bin/promptflux-list-devices
 win:
   target: nsis

@@ -1,217 +1,60 @@
-# PromptFlux — Architecture
+﻿# Architecture
 
-> System diagram and data flow for v0.1.
+## Overview
 
----
+PromptFlux has two runtime components:
 
-## System Overview
+1. Electron app (`electron-app`)
+- UI and settings
+- Global hotkey handling
+- Clipboard / optional auto-paste
+- STT process watchdog
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                     ELECTRON APP                         │
-│                                                          │
-│  ┌─────────┐  ┌───────────┐  ┌──────────┐  ┌────────┐  │
-│  │ Hotkey  │  │ Watchdog  │  │  Model   │  │ Config │  │
-│  │ Manager │  │           │  │ Manager  │  │ Loader │  │
-│  └────┬────┘  └─────┬─────┘  └────┬─────┘  └───┬────┘  │
-│       │             │              │             │        │
-│       ▼             ▼              │             │        │
-│  ┌─────────────────────────────────┴─────────────┘       │
-│  │              Main Process                     │       │
-│  │  ┌──────────────┐    ┌───────────────────┐    │       │
-│  │  │  WebSocket   │    │    Clipboard +    │    │       │
-│  │  │   Client     │    │   Paste Simulator │    │       │
-│  │  └──────┬───────┘    └───────────────────┘    │       │
-│  └─────────┼─────────────────────────────────────┘       │
-│            │                                             │
-│  ┌─────────┴──────────────────────┐                      │
-│  │        Renderer Process        │                      │
-│  │  ┌──────────────────────────┐  │                      │
-│  │  │     Orb UI (6 states)   │  │                      │
-│  │  └──────────────────────────┘  │                      │
-│  └────────────────────────────────┘                      │
-└──────────────┬───────────────────────────────────────────┘
-               │
-               │  WebSocket (ws://127.0.0.1:9876)
-               │  Localhost only — never exposed
-               │
-┌──────────────▼───────────────────────────────────────────┐
-│                   PYTHON STT SERVICE                     │
-│                                                          │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  │
-│  │  WebSocket   │  │    Audio     │  │  Transcriber  │  │
-│  │   Server     │◄─┤   Capture   │  │ (faster-      │  │
-│  │              │  │              │  │  whisper)     │  │
-│  │  :9876       │  │  ┌────────┐ │  │               │  │
-│  │              │  │  │ Ring   │ │  │  ┌─────────┐  │  │
-│  │              │  │  │ Buffer │ │  │  │ small   │  │  │
-│  │              │  │  │ 500ms  │ │  │  │ int8    │  │  │
-│  │              │  │  └────────┘ │  │  │ model   │  │  │
-│  └──────────────┘  └──────────────┘  │  └─────────┘  │  │
-│                                      └───────────────┘  │
-└─────────────────────────────────────────────────────────┘
-```
+2. Python STT service (`stt-service`)
+- Audio capture (mic or system-audio path)
+- Rolling pre-buffer
+- Whisper transcription
+- WebSocket server on localhost
 
----
+## Data Flow
 
-## Data Flow — Hold-to-Talk Cycle
+1. User triggers recording (hotkey or wake word).
+2. Electron sends `START` to local STT service.
+3. STT captures audio and buffers frames.
+4. Electron sends `STOP` (or STT emits auto-stop).
+5. STT transcribes and returns `RESULT`.
+6. Electron writes text to clipboard (and optional paste).
 
-```
-User          Electron                    Python STT
- │               │                            │
- │  Key Down     │                            │
- ├──────────────►│                            │
- │               │──── START ────────────────►│
- │               │  Orb → Red (Recording)     │── Freeze ring buffer
- │               │                            │── Begin live capture
- │               │                            │
- │  Key Up       │                            │
- ├──────────────►│                            │
- │               │  Orb → Yellow (instant)    │
- │               │──── STOP ────────────────►│
- │               │                            │── Stop capture
- │               │                            │── Concat: pre-buffer + live
- │               │                            │── Transcribe
- │               │                            │
- │               │◄─── RESULT ───────────────│
- │               │  { text, meta }            │
- │               │                            │
- │               │── Copy to clipboard        │
- │               │── (Optional: Ctrl+V sim)   │
- │               │  Orb → Green (1.5s)        │
- │               │  Orb → Idle                │
- │               │                            │
-```
+## IPC Contract
 
----
+Transport: WebSocket on `ws://127.0.0.1:<sttPort>`
 
-## Startup Sequence
+Electron to STT:
+- `START`
+- `STOP`
+- `QUIT`
 
-```
-Electron starts
-    │
-    ▼
-Load config.json
-    │
-    ▼
-Model files exist?
-    │
-    ├── NO ──► Show Blue Orb ──► Download model ──► Verify SHA256
-    │              │                                     │
-    │              │            ┌── FAIL: Error Orb ◄────┤
-    │              │            │   (allow manual drop)   │
-    │              │            │                         │
-    │              ▼            │                    SUCCESS
-    │                           │                         │
-    ├── YES ◄───────────────────┘─────────────────────────┘
-    │
-    ▼
-Spawn stt-service.exe
-    │
-    ▼
-Connect WebSocket → ws://127.0.0.1:9876
-    │
-    ▼
-Wait for READY message
-    │
-    ▼
-Register global hotkey (Ctrl+Shift+Space)
-    │
-    ▼
-Orb → Idle (dimmed)
-    │
-    ▼
-Ready for input
-```
+STT to Electron:
+- `READY`
+- `RESULT`
+- `ERROR`
+- `WAKE`
+- `AUTO_STOP`
 
----
+## Trigger Modes
 
-## Process Lifecycle
+- `hold-to-talk`: record while shortcut is held.
+- `press-to-talk`: start on release, stop on silence/max duration.
+- `wake-word`: start when wake phrase is detected.
 
-```
-Electron (parent)
-    │
-    ├── spawn ──► stt-service.exe (child)
-    │                 │
-    │   Watchdog ◄────┤ monitors process
-    │                 │
-    │   On crash (exit code ≠ 0):
-    │     ├── Log crash
-    │     ├── Wait 500ms
-    │     ├── Restart (max 3x in 30s)
-    │     └── If limit exceeded → Error Orb, stop retrying
-    │
-    │   On quit (Electron closing):
-    │     ├── Send QUIT via WebSocket
-    │     ├── Wait 2s
-    │     ├── taskkill (SIGTERM)
-    │     ├── Wait 1s
-    │     └── taskkill /F (SIGKILL)
-    │
-    └── Clean exit
-```
+## Reliability
 
----
+- Watchdog restarts STT service on crash.
+- Restart limits prevent infinite crash loops.
+- Listener settings can be applied with runtime STT reload.
 
-## Network Boundary
+## Security Boundary
 
-```
-┌─────────────────────────────────────────┐
-│              localhost only              │
-│                                         │
-│   Electron ◄──── ws://127.0.0.1:9876   │
-│              ────► Python STT           │
-│                                         │
-└─────────────────────────────────────────┘
-
-External network access:
-  - Model download (first run only, pinned URL, SHA256 verified)
-  - NOTHING else. Ever.
-```
-
----
-
-## Orb State Machine
-
-```
-                    ┌─────────────┐
-         ┌─────────│ DOWNLOADING │ (first run only)
-         │         │  Blue Spin  │
-         │         └──────┬──────┘
-         │                │ model ready
-         │                ▼
-         │         ┌─────────────┐
-         │    ┌───►│    IDLE     │◄──────────────┐
-         │    │    │  Dim/Hidden │                │
-         │    │    └──────┬──────┘                │
-         │    │           │ key down              │
-         │    │           ▼                       │
-         │    │    ┌─────────────┐                │
-         │    │    │  RECORDING  │                │
-         │    │    │  Red Pulse  │                │
-         │    │    └──────┬──────┘                │
-         │    │           │ key up (instant)      │
-         │    │           ▼                       │
-         │    │    ┌──────────────┐               │
-         │    │    │ TRANSCRIBING │               │
-         │    │    │ Yellow Spin  │               │
-         │    │    └──────┬──────┘               │
-         │    │           │                       │
-         │    │     ┌─────┴─────┐                │
-         │    │     ▼           ▼                │
-         │    │ ┌────────┐ ┌─────────┐           │
-         │    │ │SUCCESS │ │  ERROR  │           │
-         │    │ │Green   │ │Red Static│          │
-         │    │ │Flash   │ │  3s     │           │
-         │    │ └───┬────┘ └────┬────┘           │
-         │    │     │           │                 │
-         │    │     └─────┬─────┘                │
-         │    │           │ timeout               │
-         │    └───────────┘──────────────────────┘
-         │
-         └── On fatal error (any state) → ERROR
-```
-
----
-
-*Diagrams are ASCII for portability. No external rendering tools required.*
+- STT WebSocket binds to localhost.
+- Mobile relay is optional and token-protected.
+- No cloud transcription API usage.

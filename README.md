@@ -1,63 +1,105 @@
-# PromptFlux
+﻿# PromptFlux
 
-**Local AI voice-to-text. Hold a key, speak, release — text in your clipboard.**
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)](#requirements)
+[![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)](stt-service/requirements.txt)
+[![Node](https://img.shields.io/badge/node-20%2B-339933)](electron-app/package.json)
 
-No cloud. No accounts. No telemetry. Everything runs on your machine.
+Local, offline voice-to-text for Windows.
 
----
+Press a shortcut, speak, and get text in your clipboard or pasted into your active app.
+No cloud calls for transcription, no accounts, no telemetry.
 
-## How It Works
+## Why PromptFlux
 
-1. Hold `Ctrl+Shift+Space`
-2. Speak
-3. Release the key
-4. Transcribed text is in your clipboard (optionally auto-pasted)
+- Local-first speech recognition using `faster-whisper`
+- Low-latency pre-buffered recording to avoid clipped first words
+- Multiple trigger modes:
+  - Hold-to-talk
+  - Press-and-release to speak (auto-stop on silence)
+  - Wake word
+- Optional mobile relay over local network (HTTPS + token)
+- Windows installer includes packaged STT service (no Python needed on target machine)
 
-PromptFlux uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) running locally on your CPU. Audio never leaves your machine.
+## Keywords
+
+offline speech to text, local whisper app, voice typing windows, dictation desktop app, hold to talk transcription, wake word transcription, private speech recognition
 
 ## Requirements
 
 - Windows 10/11
-- ~200MB disk space (app + model)
 - Microphone
+- Approx. 200MB disk (app + model)
 
 ## Installation
 
-> v0.1 — Windows only. Mac/Linux coming in v0.2.
+1. Download the latest installer from GitHub Releases.
+2. Install and launch PromptFlux.
+3. On first run, the Whisper model is downloaded once.
 
-Download the installer from [Releases](#). On first run, PromptFlux will download the Whisper speech model (~150MB). After that, no internet is needed.
+Installer output filename:
+- `PromptFlux Setup 0.1.0.exe`
 
-### Manual Model Setup
+## Quick Start
 
-If the automatic download fails (firewall, proxy, etc.), you can manually place the model:
+1. Open PromptFlux.
+2. Open `Settings`.
+3. Choose trigger mode:
+   - `Hold To Talk (Hotkey)`
+   - `Press And Release (Hotkey)`
+   - `Wake Word`
+4. Save with `Confirm`.
+5. Speak and receive text in clipboard or auto-paste mode.
 
-1. Download the `small` int8 model from [Hugging Face](https://huggingface.co/Systran/faster-whisper-small)
-2. Place the files in `%APPDATA%/promptflux/models/small-int8/`
-3. Restart PromptFlux
+## Trigger Modes
+
+### Hold To Talk
+
+- Press and hold hotkey to record
+- Release to transcribe
+
+### Press And Release
+
+- Tap hotkey once to start recording
+- Speak naturally
+- Recording stops automatically on silence (or max duration)
+
+### Wake Word
+
+- Say configured wake phrase
+- Recording starts automatically
+- Stops on silence (or max duration)
+
+## System Audio Capture
+
+PromptFlux supports system audio capture through WASAPI.
+Depending on your PortAudio/sounddevice backend, direct loopback on output devices may not be available.
+
+If needed, choose a `[Input Capture]` style device (for example Stereo Mix, Voicemeeter Out, virtual cable) in settings.
 
 ## Configuration
 
-Config file: `%APPDATA%/promptflux/config.json`
+File location:
+- `%APPDATA%/promptflux/config.json`
 
-| Setting | Default | Description |
-|---|---|---|
-| `hotkey` | `Ctrl+Shift+Space` | Hold-to-talk key combination |
-| `outputMode` | `clipboard-only` | `clipboard-only` or `auto-paste` |
-| `preBufferMs` | `500` | Pre-recording buffer (ms) to avoid clipping |
-| `sttPort` | `9876` | Local WebSocket port for STT service |
-| `logLevel` | `info` | Logging verbosity |
-
-## Privacy
-
-- All processing is local. No audio or text is sent anywhere.
-- The only network request is the one-time model download on first run.
-- See [SECURITY.md](SECURITY.md) for the full privacy policy.
+Common settings:
+- `hotkey`
+- `triggerMode`
+- `wakeWord`
+- `wakeSilenceMs`
+- `wakeRecordMs`
+- `outputMode`
+- `captureSource`
+- `microphoneDevice`
+- `systemAudioDevice`
 
 ## Architecture
 
-Electron app (UI, hotkeys, clipboard) communicates with a local Python service (audio capture, transcription) over a localhost WebSocket.
+Electron app (UI, hotkeys, clipboard, watchdog) communicates with a local Python STT service over localhost WebSocket.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for diagrams and data flow.
+See:
+- `docs/ARCHITECTURE.md`
+- `docs/DECISIONS.md`
 
 ## Development
 
@@ -65,36 +107,87 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for diagrams and data flow.
 
 - Node.js 20+
 - Python 3.11+
-- A microphone
 
 ### Setup
 
 ```bash
-# Electron app
 cd electron-app
 npm install
 
-# Python service
-cd stt-service
+cd ../stt-service
 pip install -r requirements.txt
 ```
 
 ### Run (dev)
 
 ```bash
-# Terminal 1 — Start Python STT service
+# Terminal 1
 cd stt-service
 python server.py
 
-# Terminal 2 — Start Electron
+# Terminal 2
 cd electron-app
 npm start
 ```
 
+### Build Windows Installer
+
+```bash
+cd electron-app
+npm run dist:win
+```
+
+## Packaging
+
+- Electron app: `electron-builder`
+- STT service: `PyInstaller` via `stt-service/build_windows.ps1`
+- Final artifacts: `electron-app/dist/`
+
+## Security and Privacy
+
+- Transcription runs locally
+- No cloud API for speech recognition
+- WebSocket bound to `127.0.0.1`
+
+See `SECURITY.md` for full policy.
+
+## Contributing
+
+Please read:
+- `CONTRIBUTING.md`
+- `CODE_OF_CONDUCT.md`
+
 ## License
 
-[Apache 2.0](LICENSE)
+This repository is licensed under `GNU Affero General Public License v3.0`.
 
----
+- Full license text: `LICENSE`
+- Commercial licensing notes: `LICENSE-COMMERCIAL.md`
 
-*PromptFlux v0.1 — Built for people who talk faster than they type.*
+## Roadmap
+
+See `ROADMAP.md`.
+
+## Support
+
+- Bug reports: GitHub Issues
+- Security reports: see `SECURITY.md`
+
+## SEO / Discoverability Checklist
+
+For best discoverability after publishing, set in GitHub repo settings:
+
+1. Description: `Local offline voice-to-text desktop app for Windows (Whisper, hotkeys, wake word)`
+2. Website: your product or release page
+3. Topics:
+   - `speech-to-text`
+   - `voice-typing`
+   - `whisper`
+   - `electron`
+   - `python`
+   - `offline`
+   - `windows`
+   - `dictation`
+   - `privacy`
+4. Enable Discussions (optional)
+5. Publish Releases with clear changelogs and screenshots

@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { randomBytes } from "node:crypto";
 
 export type OutputMode = "clipboard-only" | "auto-paste";
 export type CaptureSource = "microphone" | "system-audio";
 export type TranscriptionLanguage = "auto" | string;
-export type TriggerMode = "hold-to-talk" | "wake-word";
+export type TriggerMode = "hold-to-talk" | "press-to-talk" | "wake-word";
 
 export interface AppConfig {
   hotkey: string;
@@ -21,6 +22,9 @@ export interface AppConfig {
   soundCueOnStop: boolean;
   soundCueOnTranscribed: boolean;
   soundCueOnError: boolean;
+  mobileBridgeEnabled: boolean;
+  mobileBridgePort: number;
+  mobileBridgeToken: string;
   captureSource: CaptureSource;
   microphoneDevice: string | null;
   systemAudioDevice: string | null;
@@ -46,6 +50,9 @@ const DEFAULT_CONFIG: AppConfig = {
   soundCueOnStop: true,
   soundCueOnTranscribed: true,
   soundCueOnError: true,
+  mobileBridgeEnabled: false,
+  mobileBridgePort: 32123,
+  mobileBridgeToken: "",
   captureSource: "microphone",
   microphoneDevice: null,
   systemAudioDevice: null,
@@ -61,6 +68,23 @@ function appDataDir(): string {
   return process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
 }
 
+export function createMobileBridgeToken(): string {
+  return randomBytes(16).toString("hex");
+}
+
+function sanitizeConfig(raw: Partial<AppConfig>): AppConfig {
+  const merged = { ...DEFAULT_CONFIG, ...raw };
+  const normalizedPort = Number(merged.mobileBridgePort);
+  merged.mobileBridgePort = Number.isFinite(normalizedPort)
+    ? Math.max(1024, Math.min(65535, Math.round(normalizedPort)))
+    : DEFAULT_CONFIG.mobileBridgePort;
+  merged.mobileBridgeEnabled = Boolean(merged.mobileBridgeEnabled);
+  if (!merged.mobileBridgeToken || merged.mobileBridgeToken.trim().length < 12) {
+    merged.mobileBridgeToken = createMobileBridgeToken();
+  }
+  return merged;
+}
+
 export function configPath(): string {
   return path.join(appDataDir(), "promptflux", "config.json");
 }
@@ -70,17 +94,24 @@ export function loadConfig(): AppConfig {
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
 
   if (!fs.existsSync(targetPath)) {
-    fs.writeFileSync(targetPath, JSON.stringify(DEFAULT_CONFIG, null, 2), "utf8");
-    return { ...DEFAULT_CONFIG };
+    const initial = sanitizeConfig(DEFAULT_CONFIG);
+    fs.writeFileSync(targetPath, JSON.stringify(initial, null, 2), "utf8");
+    return initial;
   }
 
   try {
     const raw = fs.readFileSync(targetPath, "utf8");
     const parsed = JSON.parse(raw) as Partial<AppConfig>;
-    return { ...DEFAULT_CONFIG, ...parsed };
+    const normalized = sanitizeConfig(parsed);
+    const serialized = JSON.stringify(normalized, null, 2);
+    if (raw.trim() !== serialized) {
+      fs.writeFileSync(targetPath, serialized, "utf8");
+    }
+    return normalized;
   } catch {
-    fs.writeFileSync(targetPath, JSON.stringify(DEFAULT_CONFIG, null, 2), "utf8");
-    return { ...DEFAULT_CONFIG };
+    const fallback = sanitizeConfig(DEFAULT_CONFIG);
+    fs.writeFileSync(targetPath, JSON.stringify(fallback, null, 2), "utf8");
+    return fallback;
   }
 }
 

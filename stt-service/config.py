@@ -23,6 +23,7 @@ class ServiceConfig:
     wake_buffer_ms: int
     wake_silence_ms: int
     wake_silence_rms_threshold: float
+    wake_match_threshold: float
     capture_source: str
     input_device: str | None
     system_audio_device: str | None
@@ -64,6 +65,7 @@ def load_config() -> ServiceConfig:
         wake_silence_rms_threshold=float(
             os.getenv("PROMPTFLUX_WAKE_SILENCE_RMS_THRESHOLD", "0.010")
         ),
+        wake_match_threshold=float(os.getenv("PROMPTFLUX_WAKE_MATCH_THRESHOLD", "0.82")),
         capture_source=os.getenv("PROMPTFLUX_CAPTURE_SOURCE", "microphone"),
         input_device=_nullable_env("PROMPTFLUX_INPUT_DEVICE"),
         system_audio_device=_nullable_env("PROMPTFLUX_SYSTEM_AUDIO_DEVICE"),

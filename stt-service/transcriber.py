@@ -17,6 +17,7 @@ class Transcriber:
         audio: np.ndarray,
         sample_rate: int,
         language: str | None = None,
+        initial_prompt: str | None = None,
     ) -> tuple[str, dict]:
         if audio.size == 0:
             return "", {"avg_logprob": 0.0, "duration_ms": 0}
@@ -35,6 +36,7 @@ class Transcriber:
             vad_filter=False,
             condition_on_previous_text=False,
             language=selected_language,
+            initial_prompt=initial_prompt,
         )
         segment_list = list(segments)
         text = "".join(segment.text for segment in segment_list).strip()

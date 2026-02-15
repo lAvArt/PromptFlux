@@ -2,19 +2,39 @@
   "name": "promptflux-electron",
   "version": "0.1.0",
   "private": true,
-  "description": "PromptFlux desktop app shell",
+  "description": "PromptFlux local offline voice-to-text desktop app",
+  "author": "lAvArt",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://github.com/lAvArt/PromptFlux",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lAvArt/PromptFlux.git"
+  },
+  "keywords": [
+    "speech-to-text",
+    "offline",
+    "whisper",
+    "voice-typing",
+    "windows",
+    "electron"
+  ],
   "main": "dist/main/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "build:stt:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ..\\stt-service\\build_windows.ps1",
+    "dist:win": "npm run build:stt:win && npm run build && electron-builder --win nsis"
   },
   "dependencies": {
+    "selfsigned": "^3.0.1",
     "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
     "@types/ws": "^8.5.14",
     "electron": "^31.7.7",
+    "electron-builder": "^25.1.8",
     "typescript": "^5.8.2"
   }
 }

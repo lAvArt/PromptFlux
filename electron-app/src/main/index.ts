@@ -1,9 +1,11 @@
+import fs from "node:fs";
 import path from "node:path";
 import { app, BrowserWindow, globalShortcut, ipcMain } from "electron";
 import { listAudioDevices } from "./audio-devices";
-import { handleOutput } from "./clipboard";
-import { AppConfig, CaptureSource, loadConfig, saveConfig } from "./config";
+import { handleOutput, listDesktopWindows } from "./clipboard";
+import { AppConfig, CaptureSource, createMobileBridgeToken, loadConfig, saveConfig } from "./config";
 import { HotkeyController } from "./hotkey";
+import { MobileBridge, MobileConnectionInfo } from "./mobile-bridge";
 import { SttProcessWatchdog } from "./watchdog";
 import { SttWebSocketClient } from "./websocket-client";
 
@@ -11,6 +13,7 @@ type SettingsGetResponse = {
   config: AppConfig;
   devices: Awaited<ReturnType<typeof listAudioDevices>>;
   outputToggleHotkey: string;
+  mobileConnection: MobileConnectionInfo;
 };
 
 type SettingsSaveRequest = {
@@ -27,6 +30,8 @@ type SettingsSaveRequest = {
   soundCueOnStop: boolean;
   soundCueOnTranscribed: boolean;
   soundCueOnError: boolean;
+  mobileBridgeEnabled: boolean;
+  mobileBridgePort: number;
   captureSource: CaptureSource;
   microphoneDevice: string | null;
   systemAudioDevice: string | null;
@@ -37,6 +42,7 @@ let appConfig: AppConfig = loadConfig();
 let mainWindow: BrowserWindow | null = null;
 let sttClient: SttWebSocketClient | null = null;
 let sttWatchdog: SttProcessWatchdog | null = null;
+let mobileBridge: MobileBridge | null = null;
 const hotkeyController = new HotkeyController();
 let shutdownStarted = false;
 let reconnectLoopRunning = false;
@@ -44,9 +50,12 @@ let ipcRegistered = false;
 let pipeGuardsRegistered = false;
 let recordingActive = false;
 let wakeAutoStopTimer: NodeJS.Timeout | null = null;
+let sttReloadInProgress = false;
 
-let sttServerScriptPath = "";
-let listDevicesScriptPath = "";
+let sttServiceCommand = "";
+let sttServiceArgs: string[] = [];
+let listDevicesCommand = "";
+let listDevicesArgs: string[] = [];
 
 const OUTPUT_TOGGLE_HOTKEY = "CommandOrControl+Shift+Alt+V";
 
@@ -103,6 +112,9 @@ function createWindow(): BrowserWindow {
     minWidth: 620,
     minHeight: 420,
     title: "PromptFlux",
+    frame: false,
+    titleBarStyle: "hidden",
+    backgroundColor: "#0f131a",
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.resolve(__dirname, "preload.js"),
@@ -145,6 +157,10 @@ function setRendererOutputMode(mode: AppConfig["outputMode"]): void {
   invokeRenderer("__promptfluxSetOutputMode", mode);
 }
 
+function setRendererWindowState(maximized: boolean): void {
+  invokeRenderer("__promptfluxSetWindowState", { maximized });
+}
+
 function setRendererCueSettings(config: AppConfig): void {
   invokeRenderer("__promptfluxSetCueSettings", {
     enabled: config.soundCueEnabled,
@@ -167,7 +183,7 @@ function clearWakeAutoStopTimer(): void {
   }
 }
 
-function beginRecording(reason: "hotkey" | "wake"): void {
+function beginRecording(reason: "hotkey" | "wake" | "tap"): void {
   if (recordingActive) {
     return;
   }
@@ -179,13 +195,24 @@ function beginRecording(reason: "hotkey" | "wake"): void {
   }
 
   recordingActive = true;
-  sttClient.send("START", reason === "wake" ? { reason: "wake" } : undefined);
+  sttClient.send(
+    "START",
+    reason === "wake" ? { reason: "wake" } : reason === "tap" ? { reason: "tap" } : undefined,
+  );
   setRendererStatus("recording");
   playRendererCue("start");
-  if (reason === "wake") {
+  if (reason === "wake" || reason === "tap") {
     clearWakeAutoStopTimer();
+    const wakeTimeoutMs = Math.max(1200, Math.min(30_000, appConfig.wakeRecordMs));
+    wakeAutoStopTimer = setTimeout(() => {
+      if (recordingActive) {
+        stopRecording(reason === "tap" ? "tap-timeout" : "wake-timeout");
+      }
+    }, wakeTimeoutMs);
     setRendererTranscript(
-      `Wake word detected: "${appConfig.wakeWord}". Listening until silence...`,
+      reason === "wake"
+        ? `Wake word detected: "${appConfig.wakeWord}". Listening until silence...`
+        : "Tap-to-talk active. Speak now; recording will stop on silence.",
       "recording",
     );
   } else {
@@ -193,7 +220,9 @@ function beginRecording(reason: "hotkey" | "wake"): void {
   }
 }
 
-function stopRecording(reason: "hotkey" | "wake-timeout" | "wake-silence"): void {
+function stopRecording(
+  reason: "hotkey" | "wake-timeout" | "wake-silence" | "tap-timeout" | "tap-silence",
+): void {
   if (!recordingActive) {
     return;
   }
@@ -212,8 +241,12 @@ function stopRecording(reason: "hotkey" | "wake-timeout" | "wake-silence"): void
   setRendererTranscript(
     reason === "wake-timeout"
       ? "Wake max duration reached. Transcribing..."
+      : reason === "tap-timeout"
+        ? "Tap-to-talk max duration reached. Transcribing..."
       : reason === "wake-silence"
         ? "Silence detected. Transcribing..."
+        : reason === "tap-silence"
+          ? "Silence detected. Transcribing..."
         : "Transcribing...",
     "transcribing",
   );
@@ -223,7 +256,8 @@ function stopRecording(reason: "hotkey" | "wake-timeout" | "wake-silence"): void
 function createWatchdog(): SttProcessWatchdog {
   return new SttProcessWatchdog(
     {
-      pythonScriptPath: sttServerScriptPath,
+      command: sttServiceCommand,
+      args: sttServiceArgs,
       port: appConfig.sttPort,
       preBufferMs: appConfig.preBufferMs,
       modelPath: appConfig.modelPath,
@@ -253,7 +287,9 @@ function createWsClient(): SttWebSocketClient {
       setRendererTranscript(
         appConfig.triggerMode === "wake-word"
           ? `Wake-word mode active. Say "${appConfig.wakeWord}" to start recording.`
-          : "Hold Ctrl+Shift+Space and start speaking.",
+          : appConfig.triggerMode === "press-to-talk"
+            ? "Press and release your hotkey, then speak. Recording stops on silence."
+            : "Hold Ctrl+Shift+Space and start speaking.",
         "neutral",
       );
     },
@@ -268,6 +304,10 @@ function createWsClient(): SttWebSocketClient {
     },
     onAutoStop: ({ reason }) => {
       if (!recordingActive) {
+        return;
+      }
+      if (appConfig.triggerMode === "press-to-talk") {
+        stopRecording(reason === "silence" ? "tap-silence" : "tap-timeout");
         return;
       }
       stopRecording(reason === "silence" ? "wake-silence" : "wake-timeout");
@@ -298,13 +338,56 @@ function createWsClient(): SttWebSocketClient {
       hotkeyController.resetState();
     },
     onClose: () => {
-      if (shutdownStarted) {
+      if (shutdownStarted || sttReloadInProgress) {
         return;
       }
       setRendererStatus("error");
       void ensureSocketConnected();
     },
   });
+}
+
+function getMobileBridgeConnectionInfo(): MobileConnectionInfo {
+  if (mobileBridge) {
+    return mobileBridge.getConnectionInfo();
+  }
+  return {
+    enabled: appConfig.mobileBridgeEnabled,
+    port: appConfig.mobileBridgePort,
+    token: appConfig.mobileBridgeToken,
+    urls: [],
+  };
+}
+
+function createMobileBridge(): MobileBridge {
+  return new MobileBridge(
+    {
+      enabled: appConfig.mobileBridgeEnabled,
+      port: appConfig.mobileBridgePort,
+      token: appConfig.mobileBridgeToken,
+    },
+    {
+      onText: async ({ text, targetWindowId, forcePaste }) => {
+        const target = forcePaste ? targetWindowId : null;
+        await handleOutput(text, appConfig.outputMode, target);
+        safeLog("[mobile] delivered text", {
+          length: text.length,
+          targetWindowId: target ?? null,
+          forcePaste: Boolean(forcePaste),
+        });
+        setRendererTranscript(
+          target ? `[Mobile -> Window ${target}] ${text}` : `[Mobile] ${text}`,
+          "success",
+        );
+        setRendererStatus("success");
+        playRendererCue("transcribed");
+        setTimeout(() => setRendererStatus("idle"), 1200);
+      },
+      onListWindows: async () => listDesktopWindows(),
+      onInfo: (message) => safeLog("[mobile]", message),
+      onError: (message) => safeError("[mobile]", message),
+    },
+  );
 }
 
 async function ensureSocketConnected(): Promise<void> {
@@ -325,12 +408,59 @@ async function ensureSocketConnected(): Promise<void> {
   }
 }
 
+async function restartSttRuntime(reason: string): Promise<void> {
+  if (shutdownStarted || sttReloadInProgress) {
+    return;
+  }
+  sttReloadInProgress = true;
+  recordingActive = false;
+  clearWakeAutoStopTimer();
+  setRendererStatus("connecting");
+  setRendererTranscript("Applying listener settings...", "neutral");
+
+  try {
+    const previousClient = sttClient;
+    sttClient = null;
+    previousClient?.close();
+
+    if (sttWatchdog) {
+      await sttWatchdog.stop();
+      sttWatchdog = null;
+    }
+
+    sttWatchdog = createWatchdog();
+    sttWatchdog.start();
+
+    sttClient = createWsClient();
+    await ensureSocketConnected();
+    safeLog("[promptflux] listener settings applied", { reason });
+  } catch (error) {
+    safeError("[promptflux] listener settings reload failed", { reason, error });
+    setRendererStatus("error");
+    setRendererTranscript("Failed to apply listener settings. Please restart PromptFlux.", "error");
+    throw error;
+  } finally {
+    sttReloadInProgress = false;
+  }
+}
+
 function registerRecordHotkey(): void {
   hotkeyController.registerHoldToTalkHotkey(appConfig.hotkey, {
     onStart: () => {
+      if (appConfig.triggerMode === "press-to-talk") {
+        return;
+      }
       beginRecording("hotkey");
     },
     onStop: () => {
+      if (appConfig.triggerMode === "press-to-talk") {
+        if (recordingActive) {
+          stopRecording("hotkey");
+        } else {
+          beginRecording("tap");
+        }
+        return;
+      }
       stopRecording("hotkey");
     },
     onError: (message) => {
@@ -343,10 +473,55 @@ function registerRecordHotkey(): void {
 }
 
 async function queryDevices() {
-  if (!listDevicesScriptPath) {
+  if (!listDevicesCommand) {
     return { microphones: [], systemAudio: [] };
   }
-  return listAudioDevices(listDevicesScriptPath);
+  return listAudioDevices(listDevicesCommand, listDevicesArgs);
+}
+
+function resolveServiceCommands(): void {
+  if (app.isPackaged) {
+    const resourcesPath = process.resourcesPath;
+    const sttExePath = path.resolve(
+      resourcesPath,
+      "stt-service",
+      "bin",
+      "promptflux-stt",
+      "promptflux-stt.exe",
+    );
+    const devicesExePath = path.resolve(
+      resourcesPath,
+      "stt-service",
+      "bin",
+      "promptflux-list-devices",
+      "promptflux-list-devices.exe",
+    );
+    const sttScriptFallback = path.resolve(resourcesPath, "stt-service", "server.py");
+    const devicesScriptFallback = path.resolve(resourcesPath, "stt-service", "list_devices.py");
+
+    if (fs.existsSync(sttExePath)) {
+      sttServiceCommand = sttExePath;
+      sttServiceArgs = [];
+    } else {
+      sttServiceCommand = "python";
+      sttServiceArgs = [sttScriptFallback];
+    }
+
+    if (fs.existsSync(devicesExePath)) {
+      listDevicesCommand = devicesExePath;
+      listDevicesArgs = [];
+    } else {
+      listDevicesCommand = "python";
+      listDevicesArgs = [devicesScriptFallback];
+    }
+    return;
+  }
+
+  const appPath = app.getAppPath();
+  sttServiceCommand = "python";
+  sttServiceArgs = [path.resolve(appPath, "../stt-service/server.py")];
+  listDevicesCommand = "python";
+  listDevicesArgs = [path.resolve(appPath, "../stt-service/list_devices.py")];
 }
 
 function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
@@ -367,7 +542,11 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
       ? transcriptionLanguageRaw
       : "auto";
   const triggerMode =
-    source.triggerMode === "wake-word" ? ("wake-word" as const) : ("hold-to-talk" as const);
+    source.triggerMode === "wake-word"
+      ? ("wake-word" as const)
+      : source.triggerMode === "press-to-talk"
+        ? ("press-to-talk" as const)
+        : ("hold-to-talk" as const);
   const wakeWord =
     typeof source.wakeWord === "string" && source.wakeWord.trim()
       ? source.wakeWord.trim().toLowerCase()
@@ -394,6 +573,11 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
   const soundCueVolume = Number.isFinite(soundCueVolumeRaw)
     ? Math.max(0, Math.min(100, Math.round(soundCueVolumeRaw)))
     : appConfig.soundCueVolume;
+  const mobileBridgeEnabled = asBoolean(source.mobileBridgeEnabled, appConfig.mobileBridgeEnabled);
+  const mobileBridgePortRaw = Number(source.mobileBridgePort);
+  const mobileBridgePort = Number.isFinite(mobileBridgePortRaw)
+    ? Math.max(1024, Math.min(65535, Math.round(mobileBridgePortRaw)))
+    : appConfig.mobileBridgePort;
   const captureSource =
     source.captureSource === "system-audio" ? "system-audio" : ("microphone" as const);
 
@@ -431,6 +615,8 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
     soundCueOnStop,
     soundCueOnTranscribed,
     soundCueOnError,
+    mobileBridgeEnabled,
+    mobileBridgePort,
     captureSource,
     microphoneDevice: sanitizeDevice(source.microphoneDevice),
     systemAudioDevice: sanitizeDevice(source.systemAudioDevice),
@@ -450,6 +636,7 @@ function registerIpcHandlers(): void {
       config: appConfig,
       devices,
       outputToggleHotkey: OUTPUT_TOGGLE_HOTKEY,
+      mobileConnection: getMobileBridgeConnectionInfo(),
     };
   });
 
@@ -476,6 +663,8 @@ function registerIpcHandlers(): void {
       soundCueOnStop: next.soundCueOnStop,
       soundCueOnTranscribed: next.soundCueOnTranscribed,
       soundCueOnError: next.soundCueOnError,
+      mobileBridgeEnabled: next.mobileBridgeEnabled,
+      mobileBridgePort: next.mobileBridgePort,
       captureSource: next.captureSource,
       microphoneDevice: next.microphoneDevice,
       systemAudioDevice: next.systemAudioDevice,
@@ -503,16 +692,61 @@ function registerIpcHandlers(): void {
       previous.preBufferMs !== appConfig.preBufferMs;
 
     saveConfig(appConfig);
-    setRendererOutputMode(appConfig.outputMode);
-    setRendererCueSettings(appConfig);
+    await mobileBridge?.updateConfig({
+      enabled: appConfig.mobileBridgeEnabled,
+      port: appConfig.mobileBridgePort,
+      token: appConfig.mobileBridgeToken,
+    });
+
     if (restartRequired) {
-      setRendererTranscript(
-        "Listener settings saved. Restart PromptFlux to apply trigger/capture changes.",
-        "neutral",
-      );
+      await restartSttRuntime("settings:save");
     }
 
-    return { config: appConfig, restartRequired };
+    setRendererOutputMode(appConfig.outputMode);
+    setRendererCueSettings(appConfig);
+
+    return { config: appConfig, restartRequired, mobileConnection: getMobileBridgeConnectionInfo() };
+  });
+
+  ipcMain.handle("mobile:regenerate-token", async () => {
+    appConfig.mobileBridgeToken = createMobileBridgeToken();
+    saveConfig(appConfig);
+    await mobileBridge?.updateConfig({
+      enabled: appConfig.mobileBridgeEnabled,
+      port: appConfig.mobileBridgePort,
+      token: appConfig.mobileBridgeToken,
+    });
+    return getMobileBridgeConnectionInfo();
+  });
+
+  ipcMain.handle("app-window:minimize", () => {
+    mainWindow?.minimize();
+    return { ok: true };
+  });
+
+  ipcMain.handle("app-window:toggle-maximize", () => {
+    if (!mainWindow) {
+      return { ok: false, maximized: false };
+    }
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+    const maximized = mainWindow.isMaximized();
+    setRendererWindowState(maximized);
+    return { ok: true, maximized };
+  });
+
+  ipcMain.handle("app-window:close", () => {
+    mainWindow?.close();
+    return { ok: true };
+  });
+
+  ipcMain.handle("app-window:state", () => {
+    return {
+      maximized: mainWindow?.isMaximized() ?? false,
+    };
   });
 }
 
@@ -533,14 +767,26 @@ async function bootstrap(): Promise<void> {
     soundCueOnStop: appConfig.soundCueOnStop,
     soundCueOnTranscribed: appConfig.soundCueOnTranscribed,
     soundCueOnError: appConfig.soundCueOnError,
+    mobileBridgeEnabled: appConfig.mobileBridgeEnabled,
+    mobileBridgePort: appConfig.mobileBridgePort,
     captureSource: appConfig.captureSource,
     sttPort: appConfig.sttPort,
     preBufferMs: appConfig.preBufferMs,
   });
 
-  const appPath = app.getAppPath();
-  sttServerScriptPath = path.resolve(appPath, "../stt-service/server.py");
-  listDevicesScriptPath = path.resolve(appPath, "../stt-service/list_devices.py");
+  resolveServiceCommands();
+  safeLog("[promptflux] stt launch", {
+    command: sttServiceCommand,
+    args: sttServiceArgs,
+    devicesCommand: listDevicesCommand,
+    devicesArgs: listDevicesArgs,
+  });
+  mobileBridge = createMobileBridge();
+  try {
+    await mobileBridge.start();
+  } catch (error) {
+    safeError("[mobile] startup failed", error);
+  }
 
   registerIpcHandlers();
 
@@ -548,6 +794,8 @@ async function bootstrap(): Promise<void> {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+  mainWindow.on("maximize", () => setRendererWindowState(true));
+  mainWindow.on("unmaximize", () => setRendererWindowState(false));
 
   if (mainWindow.webContents.isLoadingMainFrame()) {
     await new Promise<void>((resolve) => {
@@ -557,6 +805,7 @@ async function bootstrap(): Promise<void> {
 
   setRendererStatus("starting");
   setRendererOutputMode(appConfig.outputMode);
+  setRendererWindowState(mainWindow.isMaximized());
   setRendererCueSettings(appConfig);
 
   sttWatchdog = createWatchdog();
@@ -598,6 +847,10 @@ app.on("before-quit", async (event) => {
   try {
     sttClient?.send("QUIT");
     sttClient?.close();
+    if (mobileBridge) {
+      await mobileBridge.stop();
+      mobileBridge = null;
+    }
     hotkeyController.unregisterAll();
     globalShortcut.unregisterAll();
     if (sttWatchdog) {

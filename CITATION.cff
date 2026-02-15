@@ -1,0 +1,10 @@
+﻿cff-version: 1.2.0
+title: PromptFlux
+message: "If you use PromptFlux in research or demos, please cite this project."
+type: software
+authors:
+  - family-names: AvArc
+    given-names: LavArt
+repository-code: "https://github.com/lAvArt/PromptFlux"
+license: AGPL-3.0
+version: 0.1.0

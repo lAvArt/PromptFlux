@@ -24,19 +24,149 @@
         font-family: "Segoe UI", Tahoma, sans-serif;
         background: radial-gradient(circle at top left, var(--bg-b), var(--bg-a));
         color: var(--text);
-        display: grid;
-        place-items: center;
-        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+      .titlebar {
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 0 0 12px;
+        border-bottom: 1px solid #25344d;
+        background: linear-gradient(180deg, #1a273b, #151f31);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+        -webkit-app-region: drag;
+        user-select: none;
+      }
+      .titlebar-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: #d9e7ff;
+        letter-spacing: 0.3px;
+      }
+      .titlebar-controls {
+        display: inline-flex;
+        align-items: center;
+        height: 42px;
+        -webkit-app-region: no-drag;
+      }
+      .titlebar-btn {
+        width: 46px;
+        height: 42px;
+        min-width: 46px;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        color: #d5e4ff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        line-height: 0;
+        box-sizing: border-box;
+      }
+      .titlebar-btn:focus-visible {
+        outline: 2px solid #7fb3ff;
+        outline-offset: -2px;
+      }
+      .titlebar-icon {
+        position: relative;
+        display: block;
+        width: 11px;
+        height: 11px;
+        color: currentColor;
+      }
+      .titlebar-icon.min::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 10px;
+        height: 1.5px;
+        transform: translate(-50%, -50%);
+        border-radius: 1px;
+        background: currentColor;
+      }
+      .titlebar-icon.max {
+        box-sizing: border-box;
+        width: 10px;
+        height: 10px;
+        border: 1.5px solid currentColor;
+        border-radius: 1px;
+      }
+      #window-max-btn.is-restored .titlebar-icon.max {
+        width: 11px;
+        height: 11px;
+        border: 0;
+      }
+      #window-max-btn.is-restored .titlebar-icon.max::before {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 0;
+        width: 8px;
+        height: 7px;
+        border: 1.5px solid currentColor;
+        border-radius: 1px;
+      }
+      #window-max-btn.is-restored .titlebar-icon.max::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 3px;
+        width: 8px;
+        height: 7px;
+        border: 1.5px solid currentColor;
+        border-radius: 1px;
+      }
+      .titlebar-icon.close::before,
+      .titlebar-icon.close::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 10px;
+        height: 1.5px;
+        transform-origin: center;
+        border-radius: 1px;
+        background: currentColor;
+      }
+      .titlebar-icon.close::before {
+        transform: translate(-50%, -50%) rotate(45deg);
+      }
+      .titlebar-icon.close::after {
+        transform: translate(-50%, -50%) rotate(-45deg);
+      }
+      .titlebar-btn:hover {
+        background: rgba(80, 114, 163, 0.32);
+      }
+      .titlebar-btn.close:hover {
+        background: #b52c46;
+        color: #fff;
+      }
+      .app-body {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        padding: 18px;
+        box-sizing: border-box;
       }
       .window {
-        width: min(94vw, 680px);
-        min-height: 340px;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
         border-radius: 16px;
         border: 1px solid var(--panel-border);
         background: linear-gradient(160deg, #1b2434, #111827);
         box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
         padding: 16px;
         box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
       }
       .header {
         display: flex;
@@ -55,6 +185,7 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        -webkit-app-region: no-drag;
       }
       .status,
       .mode {
@@ -122,7 +253,8 @@
         background: #23314a;
       }
       .transcript {
-        min-height: 144px;
+        flex: 1;
+        min-height: 0;
         border-radius: 12px;
         border: 1px solid #2f3d54;
         background: var(--panel);
@@ -132,6 +264,7 @@
         font-size: 14px;
         white-space: pre-wrap;
         word-break: break-word;
+        overflow: auto;
       }
       .transcript.recording {
         border-color: rgba(255, 91, 87, 0.45);
@@ -186,14 +319,78 @@
         border-radius: 14px;
         padding: 16px;
         box-sizing: border-box;
+        scrollbar-width: thin;
+        scrollbar-color: #5d7296 #172337;
+      }
+      .modal::-webkit-scrollbar {
+        width: 12px;
+      }
+      .modal::-webkit-scrollbar-track {
+        background: #172337;
+        border-left: 1px solid #253753;
+        border-radius: 10px;
+      }
+      .modal::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, #6f86ad, #566a8d);
+        border: 2px solid #172337;
+        border-radius: 10px;
+        min-height: 36px;
+      }
+      .modal::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, #83a0cf, #61789f);
       }
       .modal h2 {
         margin: 0 0 12px;
         font-size: 16px;
       }
+      .settings-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #2a3a53;
+      }
+      .settings-tab {
+        border: 1px solid #3b4d68;
+        background: #1a2739;
+        color: #cfe0fb;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 12px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .settings-tab:hover {
+        background: #22344d;
+      }
+      .settings-tab.active {
+        border-color: rgba(111, 167, 255, 0.65);
+        background: rgba(111, 167, 255, 0.2);
+        color: #eef5ff;
+      }
+      .settings-tab:focus-visible {
+        outline: 2px solid #7fb3ff;
+        outline-offset: 1px;
+      }
+      .settings-panels {
+        display: block;
+      }
+      .settings-panel {
+        display: none;
+      }
+      .settings-panel.active {
+        display: grid;
+      }
       .form-grid {
         display: grid;
         gap: 10px;
+      }
+      .settings-panels .settings-panel {
+        display: none;
+      }
+      .settings-panels .settings-panel.active {
+        display: grid;
       }
       .field label {
         display: block;
@@ -211,6 +408,65 @@
         background: #111826;
         color: #ecf2ff;
         font-size: 13px;
+      }
+      .field input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 8px;
+        margin: 8px 0 2px;
+        padding: 0;
+        border: 1px solid #334967;
+        border-radius: 999px;
+        background: linear-gradient(
+          90deg,
+          #4fcf8c 0%,
+          #66abff var(--range-pct, 45%),
+          #223247 var(--range-pct, 45%),
+          #223247 100%
+        );
+        outline: none;
+        cursor: pointer;
+      }
+      .field input[type="range"]::-webkit-slider-runnable-track {
+        height: 8px;
+        background: transparent;
+      }
+      .field input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 15px;
+        height: 15px;
+        margin-top: -4px;
+        border-radius: 50%;
+        border: 1px solid #d8e6ff;
+        background: radial-gradient(circle at 30% 30%, #ffffff, #c3d8ff 70%);
+        box-shadow: 0 2px 7px rgba(0, 0, 0, 0.4);
+      }
+      .field input[type="range"]:hover::-webkit-slider-thumb {
+        background: radial-gradient(circle at 30% 30%, #ffffff, #d9e7ff 75%);
+      }
+      .field input[type="range"]:focus-visible {
+        box-shadow: 0 0 0 2px rgba(111, 167, 255, 0.35);
+      }
+      .field input[type="range"]::-moz-range-track {
+        height: 8px;
+        border: 1px solid #334967;
+        border-radius: 999px;
+        background: #223247;
+      }
+      .field input[type="range"]::-moz-range-progress {
+        height: 8px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #4fcf8c, #66abff);
+      }
+      .field input[type="range"]::-moz-range-thumb {
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        border: 1px solid #d8e6ff;
+        background: radial-gradient(circle at 30% 30%, #ffffff, #c3d8ff 70%);
+        box-shadow: 0 2px 7px rgba(0, 0, 0, 0.4);
       }
       .checkbox-row {
         display: flex;
@@ -277,6 +533,35 @@
         font-size: 12px;
         min-height: 16px;
       }
+      .mobile-box {
+        border: 1px solid #33465f;
+        border-radius: 10px;
+        background: #101a28;
+        padding: 10px;
+      }
+      .mobile-url-list {
+        margin-top: 8px;
+        border: 1px solid #2f415b;
+        border-radius: 8px;
+        background: #0d1420;
+        padding: 8px;
+        color: #b9cae3;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 11px;
+        line-height: 1.4;
+        max-height: 110px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .mobile-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .mobile-row input[type="text"] {
+        flex: 1;
+      }
 
       @keyframes pulse {
         0% {
@@ -288,6 +573,17 @@
       }
 
       @media (max-width: 700px) {
+        .app-body {
+          padding: 10px;
+        }
+        .header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .meta {
+          width: 100%;
+          flex-wrap: wrap;
+        }
         .two-col {
           grid-template-columns: 1fr;
         }
@@ -295,86 +591,87 @@
     </style>
   </head>
   <body>
-    <div class="window">
-      <div class="header">
-        <h1 class="title">PromptFlux Live Transcript</h1>
-        <div class="meta">
-          <div class="mode" id="mode-pill">
-            <span id="mode-text">clipboard-only</span>
+    <div class="titlebar">
+      <div class="titlebar-title">PromptFlux</div>
+      <div class="titlebar-controls">
+        <button class="titlebar-btn" id="window-min-btn" title="Minimize" aria-label="Minimize">
+          <span class="titlebar-icon min" aria-hidden="true"></span>
+        </button>
+        <button class="titlebar-btn" id="window-max-btn" title="Maximize" aria-label="Maximize">
+          <span class="titlebar-icon max" aria-hidden="true"></span>
+        </button>
+        <button class="titlebar-btn close" id="window-close-btn" title="Close" aria-label="Close">
+          <span class="titlebar-icon close" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+
+    <div class="app-body">
+      <div class="window">
+        <div class="header">
+          <h1 class="title">PromptFlux Live Transcript</h1>
+          <div class="meta">
+            <div class="mode" id="mode-pill">
+              <span id="mode-text">clipboard-only</span>
+            </div>
+            <div class="status neutral" id="status-pill">
+              <span class="dot"></span>
+              <span id="status-text">starting</span>
+            </div>
+            <button class="settings-button" id="open-settings" title="Open settings panel">Settings</button>
           </div>
-          <div class="status neutral" id="status-pill">
-            <span class="dot"></span>
-            <span id="status-text">starting</span>
-          </div>
-          <button class="settings-button" id="open-settings">Settings</button>
         </div>
-      </div>
 
-      <div class="transcript neutral" id="transcript">
-        Hold Ctrl+Shift+Space and start speaking.
-      </div>
+        <div class="transcript neutral" id="transcript">
+          Hold Ctrl+Shift+Space and start speaking.
+        </div>
 
-      <div class="hint" id="hint-text">
-        Toggle output mode with Ctrl+Shift+Alt+V. Text appears after transcription completes.
+        <div class="hint" id="hint-text">
+          Toggle output mode with Ctrl+Shift+Alt+V. Text appears after transcription completes.
+        </div>
+        <div class="history" id="history"></div>
       </div>
-      <div class="history" id="history"></div>
     </div>
 
     <div class="overlay" id="settings-overlay">
       <div class="modal">
         <h2>Settings</h2>
-        <div class="form-grid">
-          <div class="two-col">
-            <div class="field">
-              <label for="hotkey-input">Record Hotkey</label>
-              <div class="hotkey-row">
-                <input id="hotkey-input" type="text" placeholder="Ctrl+Shift+Space" />
-                <button class="detect-btn" id="detect-hotkey" type="button">Detect</button>
+        <div class="settings-tabs" id="settings-tabs">
+          <button class="settings-tab active" data-tab="general" type="button" aria-selected="true" title="Open general settings">
+            General
+          </button>
+          <button class="settings-tab" data-tab="audio" type="button" aria-selected="false" title="Open audio settings">
+            Audio
+          </button>
+          <button class="settings-tab" data-tab="trigger" type="button" aria-selected="false" title="Open trigger settings">
+            Trigger
+          </button>
+          <button class="settings-tab" data-tab="mobile" type="button" aria-selected="false" title="Open mobile relay settings">
+            Mobile
+          </button>
+        </div>
+
+        <div class="settings-panels">
+          <div class="form-grid settings-panel active" data-panel="general">
+            <div class="two-col">
+              <div class="field">
+                <label for="hotkey-input">Record Hotkey</label>
+                <div class="hotkey-row">
+                  <input id="hotkey-input" type="text" placeholder="Ctrl+Shift+Space" />
+                  <button class="detect-btn" id="detect-hotkey" type="button" title="Capture a hotkey combination">Detect</button>
+                </div>
+                <div class="hint">Used by hotkey trigger modes. Hold to talk, or tap and release to start then auto-stop on silence.</div>
+              </div>
+              <div class="field">
+                <label for="output-mode-select">Output Mode</label>
+                <select id="output-mode-select">
+                  <option value="clipboard-only">clipboard-only</option>
+                  <option value="auto-paste">auto-paste</option>
+                </select>
+                <div class="hint">`clipboard-only` copies text. `auto-paste` types it into the active app.</div>
               </div>
             </div>
-            <div class="field">
-              <label for="output-mode-select">Output Mode</label>
-              <select id="output-mode-select">
-                <option value="clipboard-only">clipboard-only</option>
-                <option value="auto-paste">auto-paste</option>
-              </select>
-            </div>
-          </div>
 
-          <div class="two-col">
-            <div class="field">
-              <label for="cue-volume-input">Sound Cue Volume <span id="cue-volume-value">45%</span></label>
-              <input id="cue-volume-input" type="range" min="0" max="100" step="1" />
-            </div>
-            <div class="field">
-              <label>Sound Cues</label>
-              <div class="checkbox-row">
-                <input id="cue-enabled-input" type="checkbox" />
-                <label for="cue-enabled-input" style="margin: 0;">Enable cue sounds</label>
-              </div>
-            </div>
-          </div>
-
-          <div class="cue-grid">
-            <div class="checkbox-row">
-              <input id="cue-start-input" type="checkbox" />
-              <label for="cue-start-input" style="margin: 0;">On start recording</label>
-            </div>
-            <div class="checkbox-row">
-              <input id="cue-stop-input" type="checkbox" />
-              <label for="cue-stop-input" style="margin: 0;">On stop recording</label>
-            </div>
-            <div class="checkbox-row">
-              <input id="cue-transcribed-input" type="checkbox" />
-              <label for="cue-transcribed-input" style="margin: 0;">On transcribed</label>
-            </div>
-            <div class="checkbox-row">
-              <input id="cue-error-input" type="checkbox" />
-              <label for="cue-error-input" style="margin: 0;">On error</label>
-            </div>
-          </div>
-
-          <div class="two-col">
             <div class="field">
               <label for="language-select">Transcription Language</label>
               <select id="language-select">
@@ -393,59 +690,136 @@
                 <option value="ko">Korean</option>
                 <option value="zh">Chinese</option>
               </select>
-            </div>
-            <div class="field">
-              <label for="trigger-mode-select">Trigger Mode</label>
-              <select id="trigger-mode-select">
-                <option value="hold-to-talk">Hold To Talk (Hotkey)</option>
-                <option value="wake-word">Wake Word</option>
-              </select>
+              <div class="hint">Use `Auto-detect` for mixed speech, or set a fixed language for better speed.</div>
             </div>
           </div>
 
-          <div class="two-col">
+          <div class="form-grid settings-panel" data-panel="audio" hidden>
             <div class="field">
               <label for="capture-source-select">Capture Source</label>
               <select id="capture-source-select">
                 <option value="microphone">Microphone</option>
                 <option value="system-audio">System Audio (WASAPI Loopback)</option>
               </select>
+              <div class="hint">Choose where audio comes from: your mic or desktop output audio.</div>
             </div>
-            <div class="field" id="wake-word-field">
-              <label for="wake-word-input">Wake Word / Keyword</label>
-              <input id="wake-word-input" type="text" placeholder="hey promptflux" />
+            <div class="field" id="mic-device-field">
+              <label for="mic-device-select">Microphone Device</label>
+              <select id="mic-device-select"></select>
+              <div class="hint">Select a specific mic, or keep system default.</div>
             </div>
-          </div>
-
-          <div class="two-col">
-            <div class="field" id="wake-silence-field">
-              <label for="wake-silence-input">Wake Silence Stop (ms)</label>
-              <input id="wake-silence-input" type="number" min="400" max="6000" step="50" />
+            <div class="field" id="sys-device-field">
+              <label for="sys-device-select">System Audio Device (Output)</label>
+              <select id="sys-device-select"></select>
+              <div class="hint">Select which playback device to capture in loopback mode.</div>
             </div>
             <div class="field">
               <label for="prebuffer-input">Pre-buffer (ms)</label>
               <input id="prebuffer-input" type="number" min="0" max="5000" step="50" />
+              <div class="hint">Keeps a short audio lead-in so first words are not clipped.</div>
             </div>
-            <div class="field" id="wake-duration-field">
-              <label for="wake-duration-input">Wake Max Duration (ms)</label>
-              <input id="wake-duration-input" type="number" min="1200" max="30000" step="100" />
+
+            <div class="two-col">
+              <div class="field">
+                <label for="cue-volume-input">Sound Cue Volume <span id="cue-volume-value">45%</span></label>
+                <input id="cue-volume-input" type="range" min="0" max="100" step="1" />
+                <div class="hint">Sets cue loudness for all start/stop/transcribed/error sounds.</div>
+              </div>
+              <div class="field">
+                <label>Sound Cues</label>
+                <div class="checkbox-row">
+                  <input id="cue-enabled-input" type="checkbox" />
+                  <label for="cue-enabled-input" style="margin: 0;">Enable cue sounds</label>
+                </div>
+                <div class="hint">Master toggle for all cue notifications.</div>
+              </div>
+            </div>
+
+            <div class="cue-grid">
+              <div class="checkbox-row">
+                <input id="cue-start-input" type="checkbox" />
+                <label for="cue-start-input" style="margin: 0;">On start recording</label>
+              </div>
+              <div class="checkbox-row">
+                <input id="cue-stop-input" type="checkbox" />
+                <label for="cue-stop-input" style="margin: 0;">On stop recording</label>
+              </div>
+              <div class="checkbox-row">
+                <input id="cue-transcribed-input" type="checkbox" />
+                <label for="cue-transcribed-input" style="margin: 0;">On transcribed</label>
+              </div>
+              <div class="checkbox-row">
+                <input id="cue-error-input" type="checkbox" />
+                <label for="cue-error-input" style="margin: 0;">On error</label>
+              </div>
+            </div>
+            <div class="hint">Choose exactly which events should play a cue sound.</div>
+          </div>
+
+          <div class="form-grid settings-panel" data-panel="trigger" hidden>
+            <div class="field">
+              <label for="trigger-mode-select">Trigger Mode</label>
+              <select id="trigger-mode-select">
+                <option value="hold-to-talk">Hold To Talk (Hotkey)</option>
+                <option value="press-to-talk">Press And Release (Hotkey)</option>
+                <option value="wake-word">Wake Word</option>
+              </select>
+              <div class="hint">`Hold To Talk` records while held. `Press And Release` starts on key-up and stops on silence. `Wake Word` listens for a phrase.</div>
+            </div>
+            <div class="field" id="wake-word-field">
+              <label for="wake-word-input">Wake Word / Keyword</label>
+              <input id="wake-word-input" type="text" placeholder="hey promptflux" />
+              <div class="hint">Phrase that starts recording in wake-word mode.</div>
+            </div>
+            <div class="two-col">
+              <div class="field" id="wake-silence-field">
+                <label for="wake-silence-input">Silence Stop (ms)</label>
+                <input id="wake-silence-input" type="number" min="400" max="6000" step="50" />
+                <div class="hint">Stops recording after this much silence (wake-word and press-and-release).</div>
+              </div>
+              <div class="field" id="wake-duration-field">
+                <label for="wake-duration-input">Max Duration (ms)</label>
+                <input id="wake-duration-input" type="number" min="1200" max="30000" step="100" />
+                <div class="hint">Hard recording limit (wake-word and press-and-release).</div>
+              </div>
             </div>
           </div>
 
-          <div class="field" id="mic-device-field">
-            <label for="mic-device-select">Microphone Device</label>
-            <select id="mic-device-select"></select>
-          </div>
-          <div class="field" id="sys-device-field">
-            <label for="sys-device-select">System Audio Device (Output)</label>
-            <select id="sys-device-select"></select>
+          <div class="form-grid settings-panel" data-panel="mobile" hidden>
+            <div class="field mobile-box">
+              <label>Mobile Relay (LAN)</label>
+              <div class="checkbox-row">
+                <input id="mobile-enabled-input" type="checkbox" />
+                <label for="mobile-enabled-input" style="margin: 0;">Enable phone-to-desktop text relay</label>
+              </div>
+              <div class="hint">Lets devices on your LAN send text into PromptFlux output.</div>
+              <div class="two-col" style="margin-top: 8px;">
+                <div class="field">
+                  <label for="mobile-port-input">Port</label>
+                  <input id="mobile-port-input" type="number" min="1024" max="65535" step="1" />
+                  <div class="hint">HTTPS port used by the mobile relay page.</div>
+                </div>
+                <div class="field">
+                  <label for="mobile-token-input">Access Token</label>
+                  <div class="mobile-row">
+                    <input id="mobile-token-input" type="text" readonly />
+                    <button class="btn" id="mobile-token-regen" type="button" title="Generate a new mobile relay token">Regenerate</button>
+                  </div>
+                  <div class="hint">Share URLs containing this token only with trusted devices.</div>
+                </div>
+              </div>
+              <div class="mobile-url-list" id="mobile-url-list">Mobile relay is disabled.</div>
+              <div class="hint" style="margin-top: 6px;">
+                Uses HTTPS with a local certificate. On first phone access, use browser Advanced/Proceed.
+              </div>
+            </div>
           </div>
         </div>
 
         <div class="settings-actions">
-          <button class="btn" id="refresh-devices">Refresh Devices</button>
-          <button class="btn" id="cancel-settings">Cancel</button>
-          <button class="btn primary" id="save-settings">Save</button>
+          <button class="btn" id="refresh-devices" title="Reload microphone and system-audio devices">Refresh Devices</button>
+          <button class="btn" id="cancel-settings" title="Close settings without saving">Cancel</button>
+          <button class="btn primary" id="save-settings" title="Save settings and close this panel">Confirm</button>
         </div>
         <div class="save-note" id="save-note"></div>
       </div>
@@ -469,6 +843,9 @@
       const refreshDevices = document.getElementById("refresh-devices");
       const detectHotkey = document.getElementById("detect-hotkey");
       const saveNote = document.getElementById("save-note");
+      const windowMinBtn = document.getElementById("window-min-btn");
+      const windowMaxBtn = document.getElementById("window-max-btn");
+      const windowCloseBtn = document.getElementById("window-close-btn");
 
       const hotkeyInput = document.getElementById("hotkey-input");
       const outputModeSelect = document.getElementById("output-mode-select");
@@ -493,11 +870,19 @@
       const wakeWordField = document.getElementById("wake-word-field");
       const wakeSilenceField = document.getElementById("wake-silence-field");
       const wakeDurationField = document.getElementById("wake-duration-field");
+      const mobileEnabledInput = document.getElementById("mobile-enabled-input");
+      const mobilePortInput = document.getElementById("mobile-port-input");
+      const mobileTokenInput = document.getElementById("mobile-token-input");
+      const mobileTokenRegen = document.getElementById("mobile-token-regen");
+      const mobileUrlList = document.getElementById("mobile-url-list");
+      const settingsTabs = Array.from(document.querySelectorAll(".settings-tab"));
+      const settingsPanels = Array.from(document.querySelectorAll(".settings-panel"));
 
       const state = {
         config: null,
         devices: { microphones: [], systemAudio: [] },
         outputToggleHotkey: "Ctrl+Shift+Alt+V",
+        mobileConnection: null,
         capturingHotkey: false,
         cueSettings: {
           enabled: true,
@@ -510,6 +895,35 @@
       };
 
       let cueAudioContext = null;
+      let capturePressedTokens = new Set();
+      let captureTokenOrder = [];
+
+      function applyWindowState(payload) {
+        const maximized = Boolean(payload && payload.maximized);
+        windowMaxBtn.classList.toggle("is-restored", maximized);
+        windowMaxBtn.title = maximized ? "Restore" : "Maximize";
+        windowMaxBtn.setAttribute("aria-label", maximized ? "Restore" : "Maximize");
+      }
+
+      function updateCueVolumeTrack() {
+        const value = Number(cueVolumeInput.value || 0);
+        const clamped = Math.max(0, Math.min(100, Math.round(value)));
+        cueVolumeInput.style.setProperty("--range-pct", `${clamped}%`);
+      }
+
+      function setActiveSettingsTab(tabId) {
+        const target = tabId || "general";
+        for (const tab of settingsTabs) {
+          const active = tab.dataset.tab === target;
+          tab.classList.toggle("active", active);
+          tab.setAttribute("aria-selected", active ? "true" : "false");
+        }
+        for (const panel of settingsPanels) {
+          const active = panel.dataset.panel === target;
+          panel.classList.toggle("active", active);
+          panel.hidden = !active;
+        }
+      }
 
       function setToneClass(node, tone) {
         node.classList.remove("neutral", "recording", "transcribing", "success", "error");
@@ -531,6 +945,37 @@
         return token === "Ctrl" || token === "Shift" || token === "Alt" || token === "Win";
       }
 
+      function resetHotkeyCaptureState() {
+        capturePressedTokens = new Set();
+        captureTokenOrder = [];
+      }
+
+      function trackCaptureTokenDown(token) {
+        if (!capturePressedTokens.has(token)) {
+          captureTokenOrder.push(token);
+        }
+        capturePressedTokens.add(token);
+      }
+
+      function trackCaptureTokenUp(token) {
+        capturePressedTokens.delete(token);
+      }
+
+      function composeHotkeyFromCapturedTokens() {
+        const ordered = [];
+        for (const modifier of ["Ctrl", "Shift", "Alt", "Win"]) {
+          if (captureTokenOrder.includes(modifier)) {
+            ordered.push(modifier);
+          }
+        }
+        for (const token of captureTokenOrder) {
+          if (!isModifierToken(token) && !ordered.includes(token)) {
+            ordered.push(token);
+          }
+        }
+        return ordered.join("+");
+      }
+
       function eventToKeyToken(event) {
         const key = String(event.key || "");
         if (key === "Control") return "Ctrl";
@@ -546,20 +991,9 @@
         return "";
       }
 
-      function composeHotkey(event, keyToken) {
-        const parts = [];
-        if (event.ctrlKey) parts.push("Ctrl");
-        if (event.shiftKey) parts.push("Shift");
-        if (event.altKey) parts.push("Alt");
-        if (event.metaKey) parts.push("Win");
-        if (keyToken && !isModifierToken(keyToken) && !parts.includes(keyToken)) {
-          parts.push(keyToken);
-        }
-        return parts.join("+");
-      }
-
       function setCapturingHotkey(enabled) {
         state.capturingHotkey = enabled;
+        resetHotkeyCaptureState();
         detectHotkey.classList.toggle("capturing", enabled);
         detectHotkey.textContent = enabled ? "Press..." : "Detect";
         saveNote.textContent = enabled
@@ -590,6 +1024,7 @@
         cueEnabledInput.checked = state.cueSettings.enabled;
         cueVolumeInput.value = String(state.cueSettings.volume);
         cueVolumeValue.textContent = `${state.cueSettings.volume}%`;
+        updateCueVolumeTrack();
         cueStartInput.checked = state.cueSettings.onStart;
         cueStopInput.checked = state.cueSettings.onStop;
         cueTranscribedInput.checked = state.cueSettings.onTranscribed;
@@ -600,6 +1035,29 @@
         cueStopInput.disabled = !enabled;
         cueTranscribedInput.disabled = !enabled;
         cueErrorInput.disabled = !enabled;
+      }
+
+      function refreshMobileRelayFields() {
+        const enabled = mobileEnabledInput.checked;
+        mobilePortInput.disabled = !enabled;
+        mobileTokenInput.disabled = !enabled;
+        mobileTokenRegen.disabled = !enabled;
+      }
+
+      function renderMobileConnection() {
+        const info = state.mobileConnection;
+        mobileTokenInput.value = info && info.token ? info.token : "";
+        const urls = info && Array.isArray(info.urls) ? info.urls : [];
+        if (!mobileEnabledInput.checked) {
+          mobileUrlList.textContent = "Mobile relay is disabled.";
+          return;
+        }
+        if (!urls.length) {
+          mobileUrlList.textContent =
+            "No LAN URL detected yet. Save settings and allow the app through firewall.";
+          return;
+        }
+        mobileUrlList.textContent = urls.join("\n");
       }
 
       async function ensureCueAudioContext() {
@@ -708,11 +1166,12 @@
       function refreshDeviceVisibility() {
         const source = captureSourceSelect.value;
         const triggerMode = triggerModeSelect.value;
+        const usesSilenceAutoStop = triggerMode === "wake-word" || triggerMode === "press-to-talk";
         micDeviceField.style.display = source === "microphone" ? "block" : "none";
         sysDeviceField.style.display = source === "system-audio" ? "block" : "none";
         wakeWordField.style.display = triggerMode === "wake-word" ? "block" : "none";
-        wakeSilenceField.style.display = triggerMode === "wake-word" ? "block" : "none";
-        wakeDurationField.style.display = triggerMode === "wake-word" ? "block" : "none";
+        wakeSilenceField.style.display = usesSilenceAutoStop ? "block" : "none";
+        wakeDurationField.style.display = usesSilenceAutoStop ? "block" : "none";
       }
 
       function hydrateForm() {
@@ -734,9 +1193,13 @@
         wakeSilenceInput.value = String(state.config.wakeSilenceMs ?? 1200);
         wakeDurationInput.value = String(state.config.wakeRecordMs ?? 5000);
         prebufferInput.value = String(state.config.preBufferMs ?? 500);
+        mobileEnabledInput.checked = Boolean(state.config.mobileBridgeEnabled);
+        mobilePortInput.value = String(state.config.mobileBridgePort ?? 32123);
         refillSelect(micDeviceSelect, state.devices.microphones || [], state.config.microphoneDevice);
         refillSelect(sysDeviceSelect, state.devices.systemAudio || [], state.config.systemAudioDevice);
         refreshDeviceVisibility();
+        refreshMobileRelayFields();
+        renderMobileConnection();
       }
 
       async function loadSettings() {
@@ -750,6 +1213,7 @@
           state.config = payload.config;
           state.devices = payload.devices || { microphones: [], systemAudio: [] };
           state.outputToggleHotkey = payload.outputToggleHotkey || state.outputToggleHotkey;
+          state.mobileConnection = payload.mobileConnection || null;
           hintText.textContent = `Toggle output mode with ${state.outputToggleHotkey}. Text appears after transcription completes.`;
           hydrateForm();
           saveNote.textContent = "";
@@ -786,6 +1250,8 @@
           wakeWord: wakeWordInput.value,
           wakeSilenceMs: Number(wakeSilenceInput.value || 1200),
           wakeRecordMs: Number(wakeDurationInput.value || 5000),
+          mobileBridgeEnabled: mobileEnabledInput.checked,
+          mobileBridgePort: Number(mobilePortInput.value || 32123),
           captureSource: captureSourceSelect.value,
           microphoneDevice: micDeviceSelect.value || null,
           systemAudioDevice: sysDeviceSelect.value || null,
@@ -796,6 +1262,7 @@
         try {
           const result = await api.invoke("settings:save", payload);
           state.config = result.config;
+          state.mobileConnection = result.mobileConnection || state.mobileConnection;
           applyOutputMode(result.config.outputMode);
           applyCueSettings({
             enabled: result.config.soundCueEnabled,
@@ -805,17 +1272,25 @@
             onTranscribed: result.config.soundCueOnTranscribed,
             onError: result.config.soundCueOnError,
           });
-          saveNote.textContent = result.restartRequired
-            ? "Saved. Restart app to apply trigger/capture listener changes."
-            : "Saved.";
+          renderMobileConnection();
+          saveNote.textContent = "";
+          overlay.classList.remove("open");
+          setCapturingHotkey(false);
         } catch (error) {
           saveNote.textContent = `Save failed: ${String(error)}`;
         }
       }
 
+      for (const tab of settingsTabs) {
+        tab.addEventListener("click", () => {
+          setActiveSettingsTab(tab.dataset.tab || "general");
+        });
+      }
+
       openSettings.addEventListener("click", async () => {
         overlay.classList.add("open");
         setCapturingHotkey(false);
+        setActiveSettingsTab("general");
         await loadSettings();
       });
       cancelSettings.addEventListener("click", () => {
@@ -839,11 +1314,50 @@
         cueTranscribedInput.disabled = !enabled;
         cueErrorInput.disabled = !enabled;
       });
+      mobileEnabledInput.addEventListener("change", () => {
+        refreshMobileRelayFields();
+        renderMobileConnection();
+      });
+      mobileTokenRegen.addEventListener("click", async () => {
+        if (!api) return;
+        saveNote.textContent = "Regenerating mobile token...";
+        try {
+          const info = await api.invoke("mobile:regenerate-token");
+          state.mobileConnection = info || null;
+          if (state.config) {
+            state.config.mobileBridgeToken = info && info.token ? info.token : "";
+          }
+          renderMobileConnection();
+          saveNote.textContent = "New token generated.";
+        } catch (error) {
+          saveNote.textContent = `Token regeneration failed: ${String(error)}`;
+        }
+      });
       cueVolumeInput.addEventListener("input", () => {
         cueVolumeValue.textContent = `${Number(cueVolumeInput.value || 0)}%`;
+        updateCueVolumeTrack();
       });
       detectHotkey.addEventListener("click", () => {
         setCapturingHotkey(!state.capturingHotkey);
+      });
+      windowMinBtn.addEventListener("click", async () => {
+        if (!api) return;
+        try {
+          await api.invoke("app-window:minimize");
+        } catch {}
+      });
+      windowMaxBtn.addEventListener("click", async () => {
+        if (!api) return;
+        try {
+          const statePayload = await api.invoke("app-window:toggle-maximize");
+          applyWindowState(statePayload || {});
+        } catch {}
+      });
+      windowCloseBtn.addEventListener("click", async () => {
+        if (!api) return;
+        try {
+          await api.invoke("app-window:close");
+        } catch {}
       });
 
       document.addEventListener(
@@ -859,18 +1373,45 @@
           if (!token) {
             return;
           }
-          if (token === "Esc" && !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) {
+          if (
+            token === "Esc" &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            captureTokenOrder.length === 0
+          ) {
             setCapturingHotkey(false);
             return;
           }
 
-          const combo = composeHotkey(event, token);
+          trackCaptureTokenDown(token);
+          const combo = composeHotkeyFromCapturedTokens();
           if (!combo) {
             return;
           }
 
           hotkeyInput.value = combo;
-          if (!isModifierToken(token)) {
+        },
+        true,
+      );
+
+      document.addEventListener(
+        "keyup",
+        (event) => {
+          if (!state.capturingHotkey) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+
+          const token = eventToKeyToken(event);
+          if (!token) {
+            return;
+          }
+
+          trackCaptureTokenUp(token);
+          if (capturePressedTokens.size === 0 && captureTokenOrder.length > 0) {
             setCapturingHotkey(false);
           }
         },
@@ -916,9 +1457,23 @@
         playCueByType(type);
       };
 
+      window.__promptfluxSetWindowState = function (payload) {
+        applyWindowState(payload || {});
+      };
+
+      setActiveSettingsTab("general");
+
       document.addEventListener("pointerdown", () => {
         void ensureCueAudioContext();
       }, { passive: true });
+
+      (async () => {
+        if (!api) return;
+        try {
+          const statePayload = await api.invoke("app-window:state");
+          applyWindowState(statePayload || {});
+        } catch {}
+      })();
     </script>
   </body>
 </html>

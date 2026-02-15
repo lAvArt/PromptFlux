@@ -13,9 +13,9 @@ export interface AudioDevicesPayload {
   systemAudio: AudioDeviceOption[];
 }
 
-export async function listAudioDevices(scriptPath: string): Promise<AudioDevicesPayload> {
+export async function listAudioDevices(command: string, args: string[] = []): Promise<AudioDevicesPayload> {
   return new Promise((resolve) => {
-    const child = spawn("python", [scriptPath], {
+    const child = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });

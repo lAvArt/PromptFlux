@@ -1,12 +1,13 @@
 import { ChildProcess, spawn } from "node:child_process";
 
 export interface WatchdogConfig {
-  pythonScriptPath: string;
+  command: string;
+  args: string[];
   port: number;
   preBufferMs: number;
   modelPath: string | null;
   transcriptionLanguage: string;
-  triggerMode: "hold-to-talk" | "wake-word";
+  triggerMode: "hold-to-talk" | "press-to-talk" | "wake-word";
   wakeWord: string;
   wakeSilenceMs: number;
   captureSource: "microphone" | "system-audio";
@@ -55,7 +56,7 @@ export class SttProcessWatchdog {
       env.PROMPTFLUX_MODEL_DIR = this.config.modelPath;
     }
 
-    const child = spawn("python", [this.config.pythonScriptPath], {
+    const child = spawn(this.config.command, this.config.args, {
       env,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
