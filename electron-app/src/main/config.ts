@@ -52,3 +52,9 @@ export function loadConfig(): AppConfig {
     return { ...DEFAULT_CONFIG };
   }
 }
+
+export function saveConfig(config: AppConfig): void {
+  const targetPath = configPath();
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.writeFileSync(targetPath, JSON.stringify(config, null, 2), "utf8");
+}

@@ -1,6 +1,6 @@
 import path from "node:path";
-import { app, BrowserWindow } from "electron";
-import { loadConfig } from "./config";
+import { app, BrowserWindow, globalShortcut } from "electron";
+import { loadConfig, saveConfig } from "./config";
 import { handleOutput } from "./clipboard";
 import { HotkeyController } from "./hotkey";
 import { SttProcessWatchdog } from "./watchdog";
@@ -12,11 +12,14 @@ let sttWatchdog: SttProcessWatchdog | null = null;
 const hotkeyController = new HotkeyController();
 let shutdownStarted = false;
 let reconnectLoopRunning = false;
+const OUTPUT_TOGGLE_HOTKEY = "CommandOrControl+Shift+Alt+V";
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
-    width: 380,
-    height: 180,
+    width: 620,
+    height: 430,
+    minWidth: 520,
+    minHeight: 340,
     title: "PromptFlux",
     autoHideMenuBar: true,
     webPreferences: {
@@ -30,15 +33,33 @@ function createWindow(): BrowserWindow {
   return window;
 }
 
+function invokeRenderer(functionName: string, payload: unknown): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  const safePayload = JSON.stringify(payload);
+  void mainWindow.webContents
+    .executeJavaScript(`window.${functionName}(${safePayload});`, true)
+    .catch(() => {});
+}
+
 function setRendererStatus(status: string): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
   mainWindow.setTitle(`PromptFlux - ${status}`);
-  const safe = JSON.stringify(status);
-  void mainWindow.webContents
-    .executeJavaScript(`window.__promptfluxSetStatus(${safe});`, true)
-    .catch(() => {});
+  invokeRenderer("__promptfluxSetStatus", status);
+}
+
+function setRendererTranscript(
+  text: string,
+  kind: "neutral" | "recording" | "transcribing" | "success" | "error" = "neutral",
+): void {
+  invokeRenderer("__promptfluxSetTranscript", { text, kind });
+}
+
+function setRendererOutputMode(mode: "clipboard-only" | "auto-paste"): void {
+  invokeRenderer("__promptfluxSetOutputMode", mode);
 }
 
 async function bootstrap(): Promise<void> {
@@ -55,7 +76,14 @@ async function bootstrap(): Promise<void> {
     mainWindow = null;
   });
 
+  if (mainWindow.webContents.isLoadingMainFrame()) {
+    await new Promise<void>((resolve) => {
+      mainWindow?.webContents.once("did-finish-load", () => resolve());
+    });
+  }
+
   setRendererStatus("starting");
+  setRendererOutputMode(config.outputMode);
 
   const appPath = app.getAppPath();
   const pythonScriptPath = path.resolve(appPath, "../stt-service/server.py");
@@ -81,6 +109,7 @@ async function bootstrap(): Promise<void> {
   sttClient = new SttWebSocketClient(config.sttPort, {
     onReady: () => {
       setRendererStatus("idle");
+      setRendererTranscript("Hold Ctrl+Shift+Space and start speaking.", "neutral");
     },
     onResult: async ({ text, meta }) => {
       await handleOutput(text, config.outputMode);
@@ -88,12 +117,15 @@ async function bootstrap(): Promise<void> {
         length: text.length,
         durationMs: meta?.duration_ms ?? 0,
       });
+      const finalText = text.trim() ? text : "(No speech detected)";
+      setRendererTranscript(finalText, "success");
       setRendererStatus("success");
       setTimeout(() => setRendererStatus("idle"), 1500);
       hotkeyController.resetState();
     },
     onError: ({ code, message }) => {
       console.error("[stt:error]", code, message);
+      setRendererTranscript(`${code}: ${message}`, "error");
       setRendererStatus("error");
       setTimeout(() => setRendererStatus("idle"), 3000);
       hotkeyController.resetState();
@@ -132,24 +164,45 @@ async function bootstrap(): Promise<void> {
     onStart: () => {
       if (!sttClient?.isConnected()) {
         setRendererStatus("error");
+        setRendererTranscript("STT service is not connected.", "error");
         return;
       }
       sttClient.send("START");
       setRendererStatus("recording");
+      setRendererTranscript("Listening...", "recording");
     },
     onStop: () => {
       if (!sttClient?.isConnected()) {
         setRendererStatus("error");
+        setRendererTranscript("STT service is not connected.", "error");
         return;
       }
       setRendererStatus("transcribing");
+      setRendererTranscript("Transcribing...", "transcribing");
       sttClient.send("STOP");
     },
     onError: (message) => {
       console.error("[hotkey]", message);
       setRendererStatus("error");
+      setRendererTranscript(message, "error");
     },
   });
+
+  const toggleRegistered = globalShortcut.register(OUTPUT_TOGGLE_HOTKEY, () => {
+    config.outputMode = config.outputMode === "clipboard-only" ? "auto-paste" : "clipboard-only";
+    saveConfig(config);
+    setRendererOutputMode(config.outputMode);
+    setRendererTranscript(
+      config.outputMode === "auto-paste"
+        ? "Auto-paste enabled. Results will be pasted into your active app."
+        : "Clipboard-only mode enabled. Results will not auto-paste.",
+      "neutral",
+    );
+  });
+
+  if (!toggleRegistered) {
+    console.error("[promptflux] failed to register output toggle hotkey", OUTPUT_TOGGLE_HOTKEY);
+  }
 }
 
 app.whenReady().then(() => {
@@ -166,6 +219,7 @@ app.on("before-quit", async (event) => {
     sttClient?.send("QUIT");
     sttClient?.close();
     hotkeyController.unregisterAll();
+    globalShortcut.unregisterAll();
     if (sttWatchdog) {
       await sttWatchdog.stop();
     }

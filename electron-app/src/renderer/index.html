@@ -6,50 +6,239 @@
     <title>PromptFlux</title>
     <style>
       :root {
-        color-scheme: light;
+        color-scheme: dark;
+        --bg-a: #0f131a;
+        --bg-b: #171f2f;
+        --panel: #111826;
+        --panel-border: #2f3d54;
+        --text: #edf2ff;
+        --muted: #9fb2cc;
+        --neutral: #6fa7ff;
+        --recording: #ff5b57;
+        --transcribing: #ffbc42;
+        --success: #3bd27d;
+        --error: #ff6e83;
       }
       body {
         margin: 0;
         font-family: "Segoe UI", Tahoma, sans-serif;
-        background: #10151f;
-        color: #f2f5fb;
+        background: radial-gradient(circle at top left, var(--bg-b), var(--bg-a));
+        color: var(--text);
         display: grid;
         place-items: center;
         min-height: 100vh;
       }
-      .card {
-        padding: 18px 20px;
-        border-radius: 12px;
-        background: linear-gradient(160deg, #1c2433, #121926);
-        border: 1px solid #31405a;
-        width: min(92vw, 340px);
+      .window {
+        width: min(94vw, 560px);
+        min-height: 300px;
+        border-radius: 16px;
+        border: 1px solid var(--panel-border);
+        background: linear-gradient(160deg, #1b2434, #111827);
+        box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
+        padding: 16px;
+        box-sizing: border-box;
       }
-      h1 {
-        margin: 0 0 8px;
-        font-size: 18px;
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
       }
-      p {
+      .meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .title {
         margin: 0;
-        color: #bbcadf;
-        line-height: 1.4;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
       }
       .status {
-        margin-top: 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: rgba(110, 167, 255, 0.12);
+        border: 1px solid rgba(110, 167, 255, 0.35);
         font-size: 13px;
-        color: #8ec9ff;
+        color: var(--neutral);
+        text-transform: capitalize;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .status.recording {
+        color: var(--recording);
+        border-color: rgba(255, 91, 87, 0.45);
+        background: rgba(255, 91, 87, 0.12);
+        animation: pulse 1s infinite;
+      }
+      .status.transcribing {
+        color: var(--transcribing);
+        border-color: rgba(255, 188, 66, 0.45);
+        background: rgba(255, 188, 66, 0.14);
+        animation: pulse 1s infinite;
+      }
+      .status.success {
+        color: var(--success);
+        border-color: rgba(59, 210, 125, 0.45);
+        background: rgba(59, 210, 125, 0.12);
+      }
+      .status.error {
+        color: var(--error);
+        border-color: rgba(255, 110, 131, 0.45);
+        background: rgba(255, 110, 131, 0.13);
+      }
+      .mode {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(110, 167, 255, 0.35);
+        background: rgba(110, 167, 255, 0.12);
+        color: var(--neutral);
+        font-size: 12px;
+      }
+      .mode.auto-paste {
+        color: var(--success);
+        border-color: rgba(59, 210, 125, 0.45);
+        background: rgba(59, 210, 125, 0.12);
+      }
+      .transcript {
+        min-height: 138px;
+        border-radius: 12px;
+        border: 1px solid #2f3d54;
+        background: var(--panel);
+        color: var(--text);
+        padding: 12px;
+        line-height: 1.5;
+        font-size: 14px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .transcript.recording {
+        border-color: rgba(255, 91, 87, 0.45);
+      }
+      .transcript.transcribing {
+        border-color: rgba(255, 188, 66, 0.45);
+      }
+      .transcript.success {
+        border-color: rgba(59, 210, 125, 0.45);
+      }
+      .transcript.error {
+        border-color: rgba(255, 110, 131, 0.45);
+      }
+      .hint {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .history {
+        margin-top: 10px;
+        border-top: 1px solid #2a364b;
+        padding-top: 8px;
+        color: #b8c7de;
+        font-size: 12px;
+      }
+      .history-item {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        opacity: 0.9;
+      }
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.14);
+        }
+        100% {
+          box-shadow: 0 0 0 12px rgba(255, 255, 255, 0);
+        }
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <h1>PromptFlux v0.1</h1>
-      <p>Electron shell is running.</p>
-      <p class="status" id="status">Status: starting</p>
+    <div class="window">
+      <div class="header">
+        <h1 class="title">PromptFlux Live Transcript</h1>
+        <div class="meta">
+          <div class="mode" id="mode-pill">
+            <span id="mode-text">clipboard-only</span>
+          </div>
+          <div class="status neutral" id="status-pill">
+            <span class="dot"></span>
+            <span id="status-text">starting</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="transcript neutral" id="transcript">
+        Hold Ctrl+Shift+Space and start speaking.
+      </div>
+
+      <div class="hint">Toggle output mode with Ctrl+Shift+Alt+V. Text appears after transcription completes.</div>
+      <div class="history" id="history"></div>
     </div>
+
     <script>
+      const statusPill = document.getElementById("status-pill");
+      const statusText = document.getElementById("status-text");
+      const modePill = document.getElementById("mode-pill");
+      const modeText = document.getElementById("mode-text");
+      const transcript = document.getElementById("transcript");
+      const history = document.getElementById("history");
+
+      function setToneClass(node, tone) {
+        node.classList.remove("neutral", "recording", "transcribing", "success", "error");
+        node.classList.add(tone);
+      }
+
+      function pushHistory(text) {
+        if (!text || text.startsWith("(") || text.length < 2) return;
+        const item = document.createElement("div");
+        item.className = "history-item";
+        item.textContent = text;
+        history.prepend(item);
+        while (history.children.length > 4) {
+          history.removeChild(history.lastChild);
+        }
+      }
+
       window.__promptfluxSetStatus = function (value) {
-        const node = document.getElementById("status");
-        if (node) node.textContent = "Status: " + value;
+        const next = String(value || "idle").toLowerCase();
+        statusText.textContent = next;
+        const tone = ["recording", "transcribing", "success", "error"].includes(next)
+          ? next
+          : "neutral";
+        setToneClass(statusPill, tone);
+      };
+
+      window.__promptfluxSetTranscript = function (payload) {
+        const text = String(payload && payload.text ? payload.text : "");
+        const kind = String(payload && payload.kind ? payload.kind : "neutral");
+        transcript.textContent = text || "(No text)";
+        const tone = ["recording", "transcribing", "success", "error"].includes(kind)
+          ? kind
+          : "neutral";
+        setToneClass(transcript, tone);
+        if (tone === "success" && text) {
+          pushHistory(text);
+        }
+      };
+
+      window.__promptfluxSetOutputMode = function (value) {
+        const mode = String(value || "clipboard-only");
+        modeText.textContent = mode;
+        modePill.classList.remove("auto-paste");
+        if (mode === "auto-paste") {
+          modePill.classList.add("auto-paste");
+        }
       };
     </script>
   </body>
