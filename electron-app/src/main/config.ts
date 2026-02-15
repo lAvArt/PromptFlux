@@ -3,10 +3,14 @@ import path from "node:path";
 import os from "node:os";
 
 export type OutputMode = "clipboard-only" | "auto-paste";
+export type CaptureSource = "microphone" | "system-audio";
 
 export interface AppConfig {
   hotkey: string;
   outputMode: OutputMode;
+  captureSource: CaptureSource;
+  microphoneDevice: string | null;
+  systemAudioDevice: string | null;
   modelPath: string | null;
   modelUrl: string;
   modelChecksum: string;
@@ -18,6 +22,9 @@ export interface AppConfig {
 const DEFAULT_CONFIG: AppConfig = {
   hotkey: "Ctrl+Shift+Space",
   outputMode: "clipboard-only",
+  captureSource: "microphone",
+  microphoneDevice: null,
+  systemAudioDevice: null,
   modelPath: null,
   modelUrl: "https://huggingface.co/Systran/faster-whisper-small/resolve/main/",
   modelChecksum: "",

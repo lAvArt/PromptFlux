@@ -1,30 +1,53 @@
 import path from "node:path";
-import { app, BrowserWindow, globalShortcut } from "electron";
-import { loadConfig, saveConfig } from "./config";
+import { app, BrowserWindow, globalShortcut, ipcMain } from "electron";
+import { listAudioDevices } from "./audio-devices";
 import { handleOutput } from "./clipboard";
+import { AppConfig, CaptureSource, loadConfig, saveConfig } from "./config";
 import { HotkeyController } from "./hotkey";
 import { SttProcessWatchdog } from "./watchdog";
 import { SttWebSocketClient } from "./websocket-client";
 
+type SettingsGetResponse = {
+  config: AppConfig;
+  devices: Awaited<ReturnType<typeof listAudioDevices>>;
+  outputToggleHotkey: string;
+};
+
+type SettingsSaveRequest = {
+  hotkey: string;
+  outputMode: AppConfig["outputMode"];
+  captureSource: CaptureSource;
+  microphoneDevice: string | null;
+  systemAudioDevice: string | null;
+  preBufferMs: number;
+};
+
+let appConfig: AppConfig = loadConfig();
 let mainWindow: BrowserWindow | null = null;
 let sttClient: SttWebSocketClient | null = null;
 let sttWatchdog: SttProcessWatchdog | null = null;
 const hotkeyController = new HotkeyController();
 let shutdownStarted = false;
 let reconnectLoopRunning = false;
+let ipcRegistered = false;
+
+let sttServerScriptPath = "";
+let listDevicesScriptPath = "";
+
 const OUTPUT_TOGGLE_HOTKEY = "CommandOrControl+Shift+Alt+V";
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
-    width: 620,
-    height: 430,
-    minWidth: 520,
-    minHeight: 340,
+    width: 700,
+    height: 520,
+    minWidth: 620,
+    minHeight: 420,
     title: "PromptFlux",
     autoHideMenuBar: true,
     webPreferences: {
+      preload: path.resolve(__dirname, "preload.js"),
       contextIsolation: true,
-      sandbox: true,
+      sandbox: false,
     },
   });
 
@@ -58,42 +81,20 @@ function setRendererTranscript(
   invokeRenderer("__promptfluxSetTranscript", { text, kind });
 }
 
-function setRendererOutputMode(mode: "clipboard-only" | "auto-paste"): void {
+function setRendererOutputMode(mode: AppConfig["outputMode"]): void {
   invokeRenderer("__promptfluxSetOutputMode", mode);
 }
 
-async function bootstrap(): Promise<void> {
-  const config = loadConfig();
-  console.log("[promptflux] config loaded", {
-    hotkey: config.hotkey,
-    outputMode: config.outputMode,
-    sttPort: config.sttPort,
-    preBufferMs: config.preBufferMs,
-  });
-
-  mainWindow = createWindow();
-  mainWindow.on("closed", () => {
-    mainWindow = null;
-  });
-
-  if (mainWindow.webContents.isLoadingMainFrame()) {
-    await new Promise<void>((resolve) => {
-      mainWindow?.webContents.once("did-finish-load", () => resolve());
-    });
-  }
-
-  setRendererStatus("starting");
-  setRendererOutputMode(config.outputMode);
-
-  const appPath = app.getAppPath();
-  const pythonScriptPath = path.resolve(appPath, "../stt-service/server.py");
-
-  sttWatchdog = new SttProcessWatchdog(
+function createWatchdog(): SttProcessWatchdog {
+  return new SttProcessWatchdog(
     {
-      pythonScriptPath,
-      port: config.sttPort,
-      preBufferMs: config.preBufferMs,
-      modelPath: config.modelPath,
+      pythonScriptPath: sttServerScriptPath,
+      port: appConfig.sttPort,
+      preBufferMs: appConfig.preBufferMs,
+      modelPath: appConfig.modelPath,
+      captureSource: appConfig.captureSource,
+      microphoneDevice: appConfig.microphoneDevice,
+      systemAudioDevice: appConfig.systemAudioDevice,
     },
     {
       onStdout: (line) => console.log("[stt]", line.trim()),
@@ -104,15 +105,16 @@ async function bootstrap(): Promise<void> {
       },
     },
   );
-  sttWatchdog.start();
+}
 
-  sttClient = new SttWebSocketClient(config.sttPort, {
+function createWsClient(): SttWebSocketClient {
+  return new SttWebSocketClient(appConfig.sttPort, {
     onReady: () => {
       setRendererStatus("idle");
       setRendererTranscript("Hold Ctrl+Shift+Space and start speaking.", "neutral");
     },
     onResult: async ({ text, meta }) => {
-      await handleOutput(text, config.outputMode);
+      await handleOutput(text, appConfig.outputMode);
       console.log("[promptflux] transcription", {
         length: text.length,
         durationMs: meta?.duration_ms ?? 0,
@@ -138,29 +140,28 @@ async function bootstrap(): Promise<void> {
       void ensureSocketConnected();
     },
   });
+}
 
-  const ensureSocketConnected = async (): Promise<void> => {
-    if (!sttClient || reconnectLoopRunning || shutdownStarted) {
-      return;
-    }
-    reconnectLoopRunning = true;
-    try {
-      while (!shutdownStarted && !sttClient.isConnected()) {
-        try {
-          await sttClient.connect(1, 0);
-        } catch {
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
+async function ensureSocketConnected(): Promise<void> {
+  if (!sttClient || reconnectLoopRunning || shutdownStarted) {
+    return;
+  }
+  reconnectLoopRunning = true;
+  try {
+    while (!shutdownStarted && !sttClient.isConnected()) {
+      try {
+        await sttClient.connect(1, 0);
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
-    } finally {
-      reconnectLoopRunning = false;
     }
-  };
+  } finally {
+    reconnectLoopRunning = false;
+  }
+}
 
-  setRendererStatus("connecting");
-  await ensureSocketConnected();
-
-  hotkeyController.registerHoldToTalkHotkey(config.hotkey, {
+function registerRecordHotkey(): void {
+  hotkeyController.registerHoldToTalkHotkey(appConfig.hotkey, {
     onStart: () => {
       if (!sttClient?.isConnected()) {
         setRendererStatus("error");
@@ -187,13 +188,157 @@ async function bootstrap(): Promise<void> {
       setRendererTranscript(message, "error");
     },
   });
+}
+
+async function queryDevices() {
+  if (!listDevicesScriptPath) {
+    return { microphones: [], systemAudio: [] };
+  }
+  return listAudioDevices(listDevicesScriptPath);
+}
+
+function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
+  const source = (payload ?? {}) as Partial<SettingsSaveRequest>;
+  const hotkey = typeof source.hotkey === "string" ? source.hotkey.trim() : "";
+  if (!hotkey) {
+    throw new Error("Hotkey is required.");
+  }
+
+  const outputMode =
+    source.outputMode === "auto-paste" ? "auto-paste" : ("clipboard-only" as const);
+  const captureSource =
+    source.captureSource === "system-audio" ? "system-audio" : ("microphone" as const);
+
+  const preBufferMsRaw = Number(source.preBufferMs);
+  const preBufferMs = Number.isFinite(preBufferMsRaw)
+    ? Math.max(0, Math.min(5000, Math.round(preBufferMsRaw)))
+    : appConfig.preBufferMs;
+
+  const sanitizeDevice = (value: unknown): string | null => {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
+
+  return {
+    hotkey,
+    outputMode,
+    captureSource,
+    microphoneDevice: sanitizeDevice(source.microphoneDevice),
+    systemAudioDevice: sanitizeDevice(source.systemAudioDevice),
+    preBufferMs,
+  };
+}
+
+function registerIpcHandlers(): void {
+  if (ipcRegistered) {
+    return;
+  }
+  ipcRegistered = true;
+
+  ipcMain.handle("settings:get", async (): Promise<SettingsGetResponse> => {
+    const devices = await queryDevices();
+    return {
+      config: appConfig,
+      devices,
+      outputToggleHotkey: OUTPUT_TOGGLE_HOTKEY,
+    };
+  });
+
+  ipcMain.handle("devices:list", async () => {
+    return queryDevices();
+  });
+
+  ipcMain.handle("settings:save", async (_event, payload: unknown) => {
+    const previous = { ...appConfig };
+    const next = sanitizeSaveRequest(payload);
+
+    appConfig = {
+      ...appConfig,
+      hotkey: next.hotkey,
+      outputMode: next.outputMode,
+      captureSource: next.captureSource,
+      microphoneDevice: next.microphoneDevice,
+      systemAudioDevice: next.systemAudioDevice,
+      preBufferMs: next.preBufferMs,
+    };
+
+    try {
+      if (previous.hotkey !== appConfig.hotkey) {
+        registerRecordHotkey();
+      }
+    } catch (error) {
+      appConfig.hotkey = previous.hotkey;
+      registerRecordHotkey();
+      throw error;
+    }
+
+    const restartRequired =
+      previous.captureSource !== appConfig.captureSource ||
+      previous.microphoneDevice !== appConfig.microphoneDevice ||
+      previous.systemAudioDevice !== appConfig.systemAudioDevice ||
+      previous.preBufferMs !== appConfig.preBufferMs;
+
+    saveConfig(appConfig);
+    setRendererOutputMode(appConfig.outputMode);
+    if (restartRequired) {
+      setRendererTranscript(
+        "Audio capture settings saved. Restart PromptFlux to apply input/source changes.",
+        "neutral",
+      );
+    }
+
+    return { config: appConfig, restartRequired };
+  });
+}
+
+async function bootstrap(): Promise<void> {
+  appConfig = loadConfig();
+  console.log("[promptflux] config loaded", {
+    hotkey: appConfig.hotkey,
+    outputMode: appConfig.outputMode,
+    captureSource: appConfig.captureSource,
+    sttPort: appConfig.sttPort,
+    preBufferMs: appConfig.preBufferMs,
+  });
+
+  const appPath = app.getAppPath();
+  sttServerScriptPath = path.resolve(appPath, "../stt-service/server.py");
+  listDevicesScriptPath = path.resolve(appPath, "../stt-service/list_devices.py");
+
+  registerIpcHandlers();
+
+  mainWindow = createWindow();
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+
+  if (mainWindow.webContents.isLoadingMainFrame()) {
+    await new Promise<void>((resolve) => {
+      mainWindow?.webContents.once("did-finish-load", () => resolve());
+    });
+  }
+
+  setRendererStatus("starting");
+  setRendererOutputMode(appConfig.outputMode);
+
+  sttWatchdog = createWatchdog();
+  sttWatchdog.start();
+
+  sttClient = createWsClient();
+  setRendererStatus("connecting");
+  await ensureSocketConnected();
+
+  registerRecordHotkey();
 
   const toggleRegistered = globalShortcut.register(OUTPUT_TOGGLE_HOTKEY, () => {
-    config.outputMode = config.outputMode === "clipboard-only" ? "auto-paste" : "clipboard-only";
-    saveConfig(config);
-    setRendererOutputMode(config.outputMode);
+    appConfig.outputMode = appConfig.outputMode === "clipboard-only" ? "auto-paste" : "clipboard-only";
+    saveConfig(appConfig);
+    setRendererOutputMode(appConfig.outputMode);
     setRendererTranscript(
-      config.outputMode === "auto-paste"
+      appConfig.outputMode === "auto-paste"
         ? "Auto-paste enabled. Results will be pasted into your active app."
         : "Clipboard-only mode enabled. Results will not auto-paste.",
       "neutral",

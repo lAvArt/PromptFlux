@@ -15,6 +15,9 @@ class ServiceConfig:
     model_name: str
     model_dir: Path
     compute_type: str
+    capture_source: str
+    input_device: str | None
+    system_audio_device: str | None
 
 
 def _appdata_dir() -> Path:
@@ -22,6 +25,14 @@ def _appdata_dir() -> Path:
     if appdata:
         return Path(appdata)
     return Path.home() / "AppData" / "Roaming"
+
+
+def _nullable_env(name: str) -> str | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed if trimmed else None
 
 
 def load_config() -> ServiceConfig:
@@ -35,4 +46,7 @@ def load_config() -> ServiceConfig:
         model_name=os.getenv("PROMPTFLUX_MODEL_NAME", "small"),
         model_dir=Path(os.getenv("PROMPTFLUX_MODEL_DIR", str(default_model_dir))),
         compute_type=os.getenv("PROMPTFLUX_COMPUTE_TYPE", "int8"),
+        capture_source=os.getenv("PROMPTFLUX_CAPTURE_SOURCE", "microphone"),
+        input_device=_nullable_env("PROMPTFLUX_INPUT_DEVICE"),
+        system_audio_device=_nullable_env("PROMPTFLUX_SYSTEM_AUDIO_DEVICE"),
     )

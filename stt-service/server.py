@@ -47,6 +47,9 @@ class PromptFluxSttService:
             sample_rate=self.config.sample_rate,
             channels=self.config.channels,
             pre_buffer_ms=self.config.pre_buffer_ms,
+            capture_source=self.config.capture_source,
+            input_device=self.config.input_device,
+            system_audio_device=self.config.system_audio_device,
         )
         self.transcriber = Transcriber(
             model_dir=self.config.model_dir,

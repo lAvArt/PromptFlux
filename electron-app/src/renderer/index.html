@@ -29,8 +29,8 @@
         min-height: 100vh;
       }
       .window {
-        width: min(94vw, 560px);
-        min-height: 300px;
+        width: min(94vw, 680px);
+        min-height: 340px;
         border-radius: 16px;
         border: 1px solid var(--panel-border);
         background: linear-gradient(160deg, #1b2434, #111827);
@@ -43,29 +43,43 @@
         align-items: center;
         justify-content: space-between;
         margin-bottom: 12px;
+        gap: 12px;
+      }
+      .title {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
       }
       .meta {
         display: flex;
         align-items: center;
         gap: 8px;
       }
-      .title {
-        margin: 0;
-        font-size: 16px;
-        font-weight: 600;
-        letter-spacing: 0.2px;
-      }
-      .status {
+      .status,
+      .mode {
         display: inline-flex;
         align-items: center;
         gap: 8px;
         padding: 5px 10px;
         border-radius: 999px;
+        font-size: 12px;
+      }
+      .status {
         background: rgba(110, 167, 255, 0.12);
         border: 1px solid rgba(110, 167, 255, 0.35);
-        font-size: 13px;
         color: var(--neutral);
         text-transform: capitalize;
+      }
+      .mode {
+        border: 1px solid rgba(110, 167, 255, 0.35);
+        background: rgba(110, 167, 255, 0.12);
+        color: var(--neutral);
+      }
+      .mode.auto-paste {
+        color: var(--success);
+        border-color: rgba(59, 210, 125, 0.45);
+        background: rgba(59, 210, 125, 0.12);
       }
       .dot {
         width: 8px;
@@ -95,24 +109,20 @@
         border-color: rgba(255, 110, 131, 0.45);
         background: rgba(255, 110, 131, 0.13);
       }
-      .mode {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 5px 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(110, 167, 255, 0.35);
-        background: rgba(110, 167, 255, 0.12);
-        color: var(--neutral);
+      .settings-button {
+        border: 1px solid #3d4b65;
+        color: #c8d4e9;
+        background: #1b273a;
+        border-radius: 10px;
+        padding: 6px 10px;
+        cursor: pointer;
         font-size: 12px;
       }
-      .mode.auto-paste {
-        color: var(--success);
-        border-color: rgba(59, 210, 125, 0.45);
-        background: rgba(59, 210, 125, 0.12);
+      .settings-button:hover {
+        background: #23314a;
       }
       .transcript {
-        min-height: 138px;
+        min-height: 144px;
         border-radius: 12px;
         border: 1px solid #2f3d54;
         background: var(--panel);
@@ -153,12 +163,99 @@
         text-overflow: ellipsis;
         opacity: 0.9;
       }
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(2, 6, 12, 0.68);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        box-sizing: border-box;
+      }
+      .overlay.open {
+        display: flex;
+      }
+      .modal {
+        width: min(96vw, 560px);
+        max-height: min(88vh, 760px);
+        overflow: auto;
+        background: #141c2b;
+        border: 1px solid #2f3d54;
+        border-radius: 14px;
+        padding: 16px;
+        box-sizing: border-box;
+      }
+      .modal h2 {
+        margin: 0 0 12px;
+        font-size: 16px;
+      }
+      .form-grid {
+        display: grid;
+        gap: 10px;
+      }
+      .field label {
+        display: block;
+        font-size: 12px;
+        margin-bottom: 4px;
+        color: #c4d2e7;
+      }
+      .field input,
+      .field select {
+        width: 100%;
+        box-sizing: border-box;
+        border-radius: 8px;
+        border: 1px solid #3b4d6a;
+        padding: 8px 10px;
+        background: #111826;
+        color: #ecf2ff;
+        font-size: 13px;
+      }
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .settings-actions {
+        margin-top: 14px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .btn {
+        border-radius: 8px;
+        border: 1px solid #3d4b65;
+        background: #1b273a;
+        color: #e6eeff;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .btn.primary {
+        border-color: rgba(59, 210, 125, 0.6);
+        background: rgba(59, 210, 125, 0.18);
+        color: #a4f3c6;
+      }
+      .save-note {
+        margin-top: 8px;
+        color: #a9bad4;
+        font-size: 12px;
+        min-height: 16px;
+      }
+
       @keyframes pulse {
         0% {
           box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.14);
         }
         100% {
           box-shadow: 0 0 0 12px rgba(255, 255, 255, 0);
+        }
+      }
+
+      @media (max-width: 700px) {
+        .two-col {
+          grid-template-columns: 1fr;
         }
       }
     </style>
@@ -175,6 +272,7 @@
             <span class="dot"></span>
             <span id="status-text">starting</span>
           </div>
+          <button class="settings-button" id="open-settings">Settings</button>
         </div>
       </div>
 
@@ -182,17 +280,95 @@
         Hold Ctrl+Shift+Space and start speaking.
       </div>
 
-      <div class="hint">Toggle output mode with Ctrl+Shift+Alt+V. Text appears after transcription completes.</div>
+      <div class="hint" id="hint-text">
+        Toggle output mode with Ctrl+Shift+Alt+V. Text appears after transcription completes.
+      </div>
       <div class="history" id="history"></div>
     </div>
 
+    <div class="overlay" id="settings-overlay">
+      <div class="modal">
+        <h2>Settings</h2>
+        <div class="form-grid">
+          <div class="two-col">
+            <div class="field">
+              <label for="hotkey-input">Record Hotkey</label>
+              <input id="hotkey-input" type="text" placeholder="Ctrl+Shift+Space" />
+            </div>
+            <div class="field">
+              <label for="output-mode-select">Output Mode</label>
+              <select id="output-mode-select">
+                <option value="clipboard-only">clipboard-only</option>
+                <option value="auto-paste">auto-paste</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="two-col">
+            <div class="field">
+              <label for="capture-source-select">Capture Source</label>
+              <select id="capture-source-select">
+                <option value="microphone">Microphone</option>
+                <option value="system-audio">System Audio (WASAPI Loopback)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="prebuffer-input">Pre-buffer (ms)</label>
+              <input id="prebuffer-input" type="number" min="0" max="5000" step="50" />
+            </div>
+          </div>
+
+          <div class="field" id="mic-device-field">
+            <label for="mic-device-select">Microphone Device</label>
+            <select id="mic-device-select"></select>
+          </div>
+          <div class="field" id="sys-device-field">
+            <label for="sys-device-select">System Audio Device (Output)</label>
+            <select id="sys-device-select"></select>
+          </div>
+        </div>
+
+        <div class="settings-actions">
+          <button class="btn" id="refresh-devices">Refresh Devices</button>
+          <button class="btn" id="cancel-settings">Cancel</button>
+          <button class="btn primary" id="save-settings">Save</button>
+        </div>
+        <div class="save-note" id="save-note"></div>
+      </div>
+    </div>
+
     <script>
+      const api = window.promptfluxApi || null;
+
       const statusPill = document.getElementById("status-pill");
       const statusText = document.getElementById("status-text");
       const modePill = document.getElementById("mode-pill");
       const modeText = document.getElementById("mode-text");
       const transcript = document.getElementById("transcript");
       const history = document.getElementById("history");
+      const hintText = document.getElementById("hint-text");
+
+      const overlay = document.getElementById("settings-overlay");
+      const openSettings = document.getElementById("open-settings");
+      const cancelSettings = document.getElementById("cancel-settings");
+      const saveSettings = document.getElementById("save-settings");
+      const refreshDevices = document.getElementById("refresh-devices");
+      const saveNote = document.getElementById("save-note");
+
+      const hotkeyInput = document.getElementById("hotkey-input");
+      const outputModeSelect = document.getElementById("output-mode-select");
+      const captureSourceSelect = document.getElementById("capture-source-select");
+      const prebufferInput = document.getElementById("prebuffer-input");
+      const micDeviceSelect = document.getElementById("mic-device-select");
+      const sysDeviceSelect = document.getElementById("sys-device-select");
+      const micDeviceField = document.getElementById("mic-device-field");
+      const sysDeviceField = document.getElementById("sys-device-field");
+
+      const state = {
+        config: null,
+        devices: { microphones: [], systemAudio: [] },
+        outputToggleHotkey: "Ctrl+Shift+Alt+V",
+      };
 
       function setToneClass(node, tone) {
         node.classList.remove("neutral", "recording", "transcribing", "success", "error");
@@ -209,6 +385,124 @@
           history.removeChild(history.lastChild);
         }
       }
+
+      function applyOutputMode(mode) {
+        modeText.textContent = mode;
+        modePill.classList.remove("auto-paste");
+        if (mode === "auto-paste") {
+          modePill.classList.add("auto-paste");
+        }
+      }
+
+      function optionLabel(device) {
+        const base = `${device.name} [${device.hostapi}]`;
+        return device.isDefault ? `${base} (Default)` : base;
+      }
+
+      function refillSelect(selectNode, devices, selectedId) {
+        selectNode.innerHTML = "";
+        const autoOption = document.createElement("option");
+        autoOption.value = "";
+        autoOption.textContent = "Use system default";
+        selectNode.appendChild(autoOption);
+
+        for (const device of devices) {
+          const opt = document.createElement("option");
+          opt.value = String(device.id);
+          opt.textContent = optionLabel(device);
+          selectNode.appendChild(opt);
+        }
+
+        selectNode.value = selectedId || "";
+      }
+
+      function refreshDeviceVisibility() {
+        const source = captureSourceSelect.value;
+        micDeviceField.style.display = source === "microphone" ? "block" : "none";
+        sysDeviceField.style.display = source === "system-audio" ? "block" : "none";
+      }
+
+      function hydrateForm() {
+        if (!state.config) return;
+        hotkeyInput.value = state.config.hotkey || "";
+        outputModeSelect.value = state.config.outputMode || "clipboard-only";
+        captureSourceSelect.value = state.config.captureSource || "microphone";
+        prebufferInput.value = String(state.config.preBufferMs ?? 500);
+        refillSelect(micDeviceSelect, state.devices.microphones || [], state.config.microphoneDevice);
+        refillSelect(sysDeviceSelect, state.devices.systemAudio || [], state.config.systemAudioDevice);
+        refreshDeviceVisibility();
+      }
+
+      async function loadSettings() {
+        if (!api) {
+          saveNote.textContent = "Settings API unavailable.";
+          return;
+        }
+        saveNote.textContent = "Loading settings...";
+        try {
+          const payload = await api.invoke("settings:get");
+          state.config = payload.config;
+          state.devices = payload.devices || { microphones: [], systemAudio: [] };
+          state.outputToggleHotkey = payload.outputToggleHotkey || state.outputToggleHotkey;
+          hintText.textContent = `Toggle output mode with ${state.outputToggleHotkey}. Text appears after transcription completes.`;
+          hydrateForm();
+          saveNote.textContent = "";
+        } catch (error) {
+          saveNote.textContent = `Failed to load settings: ${String(error)}`;
+        }
+      }
+
+      async function refreshDeviceLists() {
+        if (!api) return;
+        saveNote.textContent = "Refreshing devices...";
+        try {
+          state.devices = await api.invoke("devices:list");
+          hydrateForm();
+          saveNote.textContent = "Device list refreshed.";
+        } catch (error) {
+          saveNote.textContent = `Failed to refresh devices: ${String(error)}`;
+        }
+      }
+
+      async function saveSettingsFromForm() {
+        if (!api) return;
+        const payload = {
+          hotkey: hotkeyInput.value,
+          outputMode: outputModeSelect.value,
+          captureSource: captureSourceSelect.value,
+          microphoneDevice: micDeviceSelect.value || null,
+          systemAudioDevice: sysDeviceSelect.value || null,
+          preBufferMs: Number(prebufferInput.value || 500),
+        };
+
+        saveNote.textContent = "Saving...";
+        try {
+          const result = await api.invoke("settings:save", payload);
+          state.config = result.config;
+          applyOutputMode(result.config.outputMode);
+          saveNote.textContent = result.restartRequired
+            ? "Saved. Restart app to apply capture source/device changes."
+            : "Saved.";
+        } catch (error) {
+          saveNote.textContent = `Save failed: ${String(error)}`;
+        }
+      }
+
+      openSettings.addEventListener("click", async () => {
+        overlay.classList.add("open");
+        await loadSettings();
+      });
+      cancelSettings.addEventListener("click", () => {
+        overlay.classList.remove("open");
+        saveNote.textContent = "";
+      });
+      refreshDevices.addEventListener("click", () => {
+        void refreshDeviceLists();
+      });
+      saveSettings.addEventListener("click", () => {
+        void saveSettingsFromForm();
+      });
+      captureSourceSelect.addEventListener("change", refreshDeviceVisibility);
 
       window.__promptfluxSetStatus = function (value) {
         const next = String(value || "idle").toLowerCase();
@@ -234,10 +528,9 @@
 
       window.__promptfluxSetOutputMode = function (value) {
         const mode = String(value || "clipboard-only");
-        modeText.textContent = mode;
-        modePill.classList.remove("auto-paste");
-        if (mode === "auto-paste") {
-          modePill.classList.add("auto-paste");
+        applyOutputMode(mode);
+        if (state.config) {
+          state.config.outputMode = mode;
         }
       };
     </script>
