@@ -12,9 +12,20 @@ class Transcriber:
         model_target = str(model_dir) if model_dir.exists() else model_name
         self._model = WhisperModel(model_target, compute_type=compute_type)
 
-    def transcribe(self, audio: np.ndarray, sample_rate: int) -> tuple[str, dict]:
+    def transcribe(
+        self,
+        audio: np.ndarray,
+        sample_rate: int,
+        language: str | None = None,
+    ) -> tuple[str, dict]:
         if audio.size == 0:
             return "", {"avg_logprob": 0.0, "duration_ms": 0}
+
+        selected_language = None
+        if language:
+            normalized = language.strip().lower()
+            if normalized and normalized != "auto":
+                selected_language = normalized
 
         start = time.perf_counter()
         segments, _ = self._model.transcribe(
@@ -23,7 +34,7 @@ class Transcriber:
             best_of=1,
             vad_filter=False,
             condition_on_previous_text=False,
-            language=None,
+            language=selected_language,
         )
         segment_list = list(segments)
         text = "".join(segment.text for segment in segment_list).strip()

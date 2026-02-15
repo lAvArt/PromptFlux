@@ -16,6 +16,7 @@ type SettingsGetResponse = {
 type SettingsSaveRequest = {
   hotkey: string;
   outputMode: AppConfig["outputMode"];
+  transcriptionLanguage: AppConfig["transcriptionLanguage"];
   captureSource: CaptureSource;
   microphoneDevice: string | null;
   systemAudioDevice: string | null;
@@ -139,6 +140,7 @@ function createWatchdog(): SttProcessWatchdog {
       port: appConfig.sttPort,
       preBufferMs: appConfig.preBufferMs,
       modelPath: appConfig.modelPath,
+      transcriptionLanguage: appConfig.transcriptionLanguage,
       captureSource: appConfig.captureSource,
       microphoneDevice: appConfig.microphoneDevice,
       systemAudioDevice: appConfig.systemAudioDevice,
@@ -227,7 +229,7 @@ function registerRecordHotkey(): void {
       }
       setRendererStatus("transcribing");
       setRendererTranscript("Transcribing...", "transcribing");
-      sttClient.send("STOP");
+      sttClient.send("STOP", { language: appConfig.transcriptionLanguage });
     },
     onError: (message) => {
       safeError("[hotkey]", message);
@@ -253,6 +255,14 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
 
   const outputMode =
     source.outputMode === "auto-paste" ? "auto-paste" : ("clipboard-only" as const);
+  const transcriptionLanguageRaw =
+    typeof source.transcriptionLanguage === "string" && source.transcriptionLanguage.trim()
+      ? source.transcriptionLanguage.trim().toLowerCase()
+      : "auto";
+  const transcriptionLanguage =
+    transcriptionLanguageRaw === "auto" || /^[a-z]{2,3}(?:-[a-z]{2})?$/.test(transcriptionLanguageRaw)
+      ? transcriptionLanguageRaw
+      : "auto";
   const captureSource =
     source.captureSource === "system-audio" ? "system-audio" : ("microphone" as const);
 
@@ -272,6 +282,7 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
   return {
     hotkey,
     outputMode,
+    transcriptionLanguage,
     captureSource,
     microphoneDevice: sanitizeDevice(source.microphoneDevice),
     systemAudioDevice: sanitizeDevice(source.systemAudioDevice),
@@ -306,6 +317,7 @@ function registerIpcHandlers(): void {
       ...appConfig,
       hotkey: next.hotkey,
       outputMode: next.outputMode,
+      transcriptionLanguage: next.transcriptionLanguage,
       captureSource: next.captureSource,
       microphoneDevice: next.microphoneDevice,
       systemAudioDevice: next.systemAudioDevice,
@@ -347,6 +359,7 @@ async function bootstrap(): Promise<void> {
   safeLog("[promptflux] config loaded", {
     hotkey: appConfig.hotkey,
     outputMode: appConfig.outputMode,
+    transcriptionLanguage: appConfig.transcriptionLanguage,
     captureSource: appConfig.captureSource,
     sttPort: appConfig.sttPort,
     preBufferMs: appConfig.preBufferMs,

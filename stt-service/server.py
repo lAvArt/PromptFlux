@@ -20,7 +20,18 @@ logging.basicConfig(
 logger = logging.getLogger("promptflux.stt")
 
 
-def _message_type(message: Any) -> str:
+def _normalize_language(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+    return normalized
+
+
+def _parse_message(message: Any) -> tuple[str, dict[str, Any]]:
     if isinstance(message, bytes):
         message = message.decode("utf-8", errors="ignore")
 
@@ -29,15 +40,18 @@ def _message_type(message: Any) -> str:
         if stripped.startswith("{") and stripped.endswith("}"):
             try:
                 payload = json.loads(stripped)
-                return str(payload.get("type", "")).upper()
+                if isinstance(payload, dict):
+                    msg_type = str(payload.get("type", "")).upper()
+                    return msg_type, payload
+                return "", {}
             except json.JSONDecodeError:
-                return ""
-        return stripped.upper()
+                return "", {}
+        return stripped.upper(), {}
 
     if isinstance(message, dict):
-        return str(message.get("type", "")).upper()
+        return str(message.get("type", "")).upper(), message
 
-    return ""
+    return "", {}
 
 
 class PromptFluxSttService:
@@ -74,16 +88,22 @@ class PromptFluxSttService:
         await self.send_message(ws, "READY", {})
         try:
             async for raw_message in ws:
-                msg_type = _message_type(raw_message)
+                msg_type, payload = _parse_message(raw_message)
                 if msg_type == "START":
                     self.audio.begin_recording()
                     continue
 
                 if msg_type == "STOP":
                     audio = self.audio.stop_recording()
+                    requested_language = _normalize_language(
+                        payload.get("language", self.config.transcription_language)
+                    )
                     try:
                         text, meta = await asyncio.to_thread(
-                            self.transcriber.transcribe, audio, self.config.sample_rate
+                            self.transcriber.transcribe,
+                            audio,
+                            self.config.sample_rate,
+                            requested_language,
                         )
                     except Exception as exc:
                         logger.exception("Transcription failed")

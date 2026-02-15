@@ -212,6 +212,25 @@
         color: #ecf2ff;
         font-size: 13px;
       }
+      .hotkey-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+      }
+      .detect-btn {
+        border-radius: 8px;
+        border: 1px solid #3d4b65;
+        background: #1b273a;
+        color: #dbe6f8;
+        padding: 8px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .detect-btn.capturing {
+        border-color: rgba(255, 188, 66, 0.6);
+        background: rgba(255, 188, 66, 0.22);
+        color: #ffd786;
+      }
       .two-col {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -293,7 +312,10 @@
           <div class="two-col">
             <div class="field">
               <label for="hotkey-input">Record Hotkey</label>
-              <input id="hotkey-input" type="text" placeholder="Ctrl+Shift+Space" />
+              <div class="hotkey-row">
+                <input id="hotkey-input" type="text" placeholder="Ctrl+Shift+Space" />
+                <button class="detect-btn" id="detect-hotkey" type="button">Detect</button>
+              </div>
             </div>
             <div class="field">
               <label for="output-mode-select">Output Mode</label>
@@ -306,12 +328,34 @@
 
           <div class="two-col">
             <div class="field">
+              <label for="language-select">Transcription Language</label>
+              <select id="language-select">
+                <option value="auto">Auto-detect</option>
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="it">Italian</option>
+                <option value="pt">Portuguese</option>
+                <option value="ru">Russian</option>
+                <option value="ar">Arabic</option>
+                <option value="tr">Turkish</option>
+                <option value="hi">Hindi</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="zh">Chinese</option>
+              </select>
+            </div>
+            <div class="field">
               <label for="capture-source-select">Capture Source</label>
               <select id="capture-source-select">
                 <option value="microphone">Microphone</option>
                 <option value="system-audio">System Audio (WASAPI Loopback)</option>
               </select>
             </div>
+          </div>
+
+          <div class="two-col">
             <div class="field">
               <label for="prebuffer-input">Pre-buffer (ms)</label>
               <input id="prebuffer-input" type="number" min="0" max="5000" step="50" />
@@ -353,10 +397,12 @@
       const cancelSettings = document.getElementById("cancel-settings");
       const saveSettings = document.getElementById("save-settings");
       const refreshDevices = document.getElementById("refresh-devices");
+      const detectHotkey = document.getElementById("detect-hotkey");
       const saveNote = document.getElementById("save-note");
 
       const hotkeyInput = document.getElementById("hotkey-input");
       const outputModeSelect = document.getElementById("output-mode-select");
+      const languageSelect = document.getElementById("language-select");
       const captureSourceSelect = document.getElementById("capture-source-select");
       const prebufferInput = document.getElementById("prebuffer-input");
       const micDeviceSelect = document.getElementById("mic-device-select");
@@ -368,6 +414,7 @@
         config: null,
         devices: { microphones: [], systemAudio: [] },
         outputToggleHotkey: "Ctrl+Shift+Alt+V",
+        capturingHotkey: false,
       };
 
       function setToneClass(node, tone) {
@@ -384,6 +431,46 @@
         while (history.children.length > 4) {
           history.removeChild(history.lastChild);
         }
+      }
+
+      function isModifierToken(token) {
+        return token === "Ctrl" || token === "Shift" || token === "Alt" || token === "Win";
+      }
+
+      function eventToKeyToken(event) {
+        const key = String(event.key || "");
+        if (key === "Control") return "Ctrl";
+        if (key === "Shift") return "Shift";
+        if (key === "Alt") return "Alt";
+        if (key === "Meta") return "Win";
+        if (key === " " || event.code === "Space") return "Space";
+        if (key === "Escape") return "Esc";
+        if (key === "Enter") return "Enter";
+        if (key === "Tab") return "Tab";
+        if (/^F([1-9]|1[0-9]|2[0-4])$/.test(key.toUpperCase())) return key.toUpperCase();
+        if (/^[a-z0-9]$/i.test(key)) return key.toUpperCase();
+        return "";
+      }
+
+      function composeHotkey(event, keyToken) {
+        const parts = [];
+        if (event.ctrlKey) parts.push("Ctrl");
+        if (event.shiftKey) parts.push("Shift");
+        if (event.altKey) parts.push("Alt");
+        if (event.metaKey) parts.push("Win");
+        if (keyToken && !isModifierToken(keyToken) && !parts.includes(keyToken)) {
+          parts.push(keyToken);
+        }
+        return parts.join("+");
+      }
+
+      function setCapturingHotkey(enabled) {
+        state.capturingHotkey = enabled;
+        detectHotkey.classList.toggle("capturing", enabled);
+        detectHotkey.textContent = enabled ? "Press..." : "Detect";
+        saveNote.textContent = enabled
+          ? "Press your desired key combination, then release."
+          : "";
       }
 
       function applyOutputMode(mode) {
@@ -426,6 +513,7 @@
         if (!state.config) return;
         hotkeyInput.value = state.config.hotkey || "";
         outputModeSelect.value = state.config.outputMode || "clipboard-only";
+        languageSelect.value = state.config.transcriptionLanguage || "auto";
         captureSourceSelect.value = state.config.captureSource || "microphone";
         prebufferInput.value = String(state.config.preBufferMs ?? 500);
         refillSelect(micDeviceSelect, state.devices.microphones || [], state.config.microphoneDevice);
@@ -469,6 +557,7 @@
         const payload = {
           hotkey: hotkeyInput.value,
           outputMode: outputModeSelect.value,
+          transcriptionLanguage: languageSelect.value,
           captureSource: captureSourceSelect.value,
           microphoneDevice: micDeviceSelect.value || null,
           systemAudioDevice: sysDeviceSelect.value || null,
@@ -490,10 +579,12 @@
 
       openSettings.addEventListener("click", async () => {
         overlay.classList.add("open");
+        setCapturingHotkey(false);
         await loadSettings();
       });
       cancelSettings.addEventListener("click", () => {
         overlay.classList.remove("open");
+        setCapturingHotkey(false);
         saveNote.textContent = "";
       });
       refreshDevices.addEventListener("click", () => {
@@ -503,6 +594,40 @@
         void saveSettingsFromForm();
       });
       captureSourceSelect.addEventListener("change", refreshDeviceVisibility);
+      detectHotkey.addEventListener("click", () => {
+        setCapturingHotkey(!state.capturingHotkey);
+      });
+
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          if (!state.capturingHotkey) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+
+          const token = eventToKeyToken(event);
+          if (!token) {
+            return;
+          }
+          if (token === "Esc" && !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) {
+            setCapturingHotkey(false);
+            return;
+          }
+
+          const combo = composeHotkey(event, token);
+          if (!combo) {
+            return;
+          }
+
+          hotkeyInput.value = combo;
+          if (!isModifierToken(token)) {
+            setCapturingHotkey(false);
+          }
+        },
+        true,
+      );
 
       window.__promptfluxSetStatus = function (value) {
         const next = String(value || "idle").toLowerCase();

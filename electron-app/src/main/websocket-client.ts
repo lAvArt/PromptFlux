@@ -127,11 +127,15 @@ export class SttWebSocketClient {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
-  send(type: "START" | "STOP" | "QUIT"): void {
+  send(type: "START" | "STOP" | "QUIT", payload?: Record<string, unknown>): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return;
     }
-    this.ws.send(type);
+    if (!payload || Object.keys(payload).length === 0) {
+      this.ws.send(type);
+      return;
+    }
+    this.ws.send(JSON.stringify({ type, ...payload }));
   }
 
   close(): void {

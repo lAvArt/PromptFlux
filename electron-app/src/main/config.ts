@@ -4,10 +4,12 @@ import os from "node:os";
 
 export type OutputMode = "clipboard-only" | "auto-paste";
 export type CaptureSource = "microphone" | "system-audio";
+export type TranscriptionLanguage = "auto" | string;
 
 export interface AppConfig {
   hotkey: string;
   outputMode: OutputMode;
+  transcriptionLanguage: TranscriptionLanguage;
   captureSource: CaptureSource;
   microphoneDevice: string | null;
   systemAudioDevice: string | null;
@@ -22,6 +24,7 @@ export interface AppConfig {
 const DEFAULT_CONFIG: AppConfig = {
   hotkey: "Ctrl+Shift+Space",
   outputMode: "clipboard-only",
+  transcriptionLanguage: "auto",
   captureSource: "microphone",
   microphoneDevice: null,
   systemAudioDevice: null,

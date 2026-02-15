@@ -5,6 +5,7 @@ export interface WatchdogConfig {
   port: number;
   preBufferMs: number;
   modelPath: string | null;
+  transcriptionLanguage: string;
   captureSource: "microphone" | "system-audio";
   microphoneDevice: string | null;
   systemAudioDevice: string | null;
@@ -38,6 +39,7 @@ export class SttProcessWatchdog {
       ...process.env,
       PROMPTFLUX_STT_PORT: String(this.config.port),
       PROMPTFLUX_PRE_BUFFER_MS: String(this.config.preBufferMs),
+      PROMPTFLUX_TRANSCRIPTION_LANGUAGE: this.config.transcriptionLanguage,
       PROMPTFLUX_CAPTURE_SOURCE: this.config.captureSource,
       PROMPTFLUX_INPUT_DEVICE: this.config.microphoneDevice ?? "",
       PROMPTFLUX_SYSTEM_AUDIO_DEVICE: this.config.systemAudioDevice ?? "",
