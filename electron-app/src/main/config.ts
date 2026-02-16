@@ -11,6 +11,7 @@ export type WakeSilenceSensitivity = "low" | "medium" | "high";
 
 export interface AppConfig {
   hotkey: string;
+  forceEndHotkey: string;
   outputMode: OutputMode;
   transcriptionLanguage: TranscriptionLanguage;
   triggerMode: TriggerMode;
@@ -40,6 +41,7 @@ export interface AppConfig {
 
 const DEFAULT_CONFIG: AppConfig = {
   hotkey: "Ctrl+Shift+Space",
+  forceEndHotkey: "Ctrl+Shift+Backspace",
   outputMode: "clipboard-only",
   transcriptionLanguage: "auto",
   triggerMode: "hold-to-talk",
@@ -77,6 +79,10 @@ export function createMobileBridgeToken(): string {
 
 function sanitizeConfig(raw: Partial<AppConfig>): AppConfig {
   const merged = { ...DEFAULT_CONFIG, ...raw };
+  const hotkeyRaw = String((merged as { hotkey?: unknown }).hotkey ?? "").trim();
+  merged.hotkey = hotkeyRaw || DEFAULT_CONFIG.hotkey;
+  const forceEndHotkeyRaw = String((merged as { forceEndHotkey?: unknown }).forceEndHotkey ?? "").trim();
+  merged.forceEndHotkey = forceEndHotkeyRaw || DEFAULT_CONFIG.forceEndHotkey;
   const sensitivityRaw = String((merged as { wakeSilenceSensitivity?: unknown }).wakeSilenceSensitivity ?? "")
     .trim()
     .toLowerCase();

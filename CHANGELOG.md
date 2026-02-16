@@ -11,6 +11,7 @@ The format is based on Keep a Changelog.
 - Expanded settings hints/tooltips.
 - Wake-word fuzzy matching with configurable threshold.
 - Mobile relay and LAN bridge enhancements.
+- Adjustable force end-talk hotkey to immediately stop active recording.
 - System-audio compatibility fallbacks for sounddevice/PortAudio variations.
 - Public-launch repository docs and community health files.
 

@@ -20,10 +20,13 @@ export async function handleOutput(
   writeToClipboard(text);
   if (targetWindowId) {
     const focused = await focusWindow(targetWindowId);
-    if (focused) {
-      await sleep(110);
-      await simulateCtrlV();
+    if (!focused) {
+      throw new Error(
+        `Could not focus target window (${targetWindowId}). Bring it to the foreground once and try again.`,
+      );
     }
+    await sleep(140);
+    await simulateCtrlV();
     return;
   }
   if (mode === "auto-paste") {
@@ -82,13 +85,41 @@ export function focusWindow(windowId: string): Promise<boolean> {
       '  [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);',
       '  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);',
       '  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);',
+      '  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+      '  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);',
+      '  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);',
+      '  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);',
       "}",
       "\"@;",
       "$ptr = [IntPtr]::new($h);",
       "if (-not [PromptFluxWinApi]::IsWindow($ptr)) { exit 2 }",
       "[PromptFluxWinApi]::ShowWindowAsync($ptr, 9) | Out-Null;",
       "Start-Sleep -Milliseconds 120;",
-      "if ([PromptFluxWinApi]::SetForegroundWindow($ptr)) { exit 0 }",
+      "$current = [PromptFluxWinApi]::GetForegroundWindow();",
+      "$currentPid = 0;",
+      "$targetPid = 0;",
+      "$currentThread = [PromptFluxWinApi]::GetWindowThreadProcessId($current, [ref]$currentPid);",
+      "$targetThread = [PromptFluxWinApi]::GetWindowThreadProcessId($ptr, [ref]$targetPid);",
+      "$attached = $false;",
+      "if ($currentThread -ne 0 -and $targetThread -ne 0 -and $currentThread -ne $targetThread) {",
+      "  $attached = [PromptFluxWinApi]::AttachThreadInput($currentThread, $targetThread, $true);",
+      "}",
+      "[PromptFluxWinApi]::BringWindowToTop($ptr) | Out-Null;",
+      "$ok = [PromptFluxWinApi]::SetForegroundWindow($ptr);",
+      "Start-Sleep -Milliseconds 120;",
+      "if ($attached) {",
+      "  [PromptFluxWinApi]::AttachThreadInput($currentThread, $targetThread, $false) | Out-Null;",
+      "}",
+      "if (-not $ok -and $targetPid -gt 0) {",
+      "  try {",
+      "    Add-Type -AssemblyName Microsoft.VisualBasic;",
+      "    [Microsoft.VisualBasic.Interaction]::AppActivate($targetPid) | Out-Null;",
+      "    $ok = $true;",
+      "  } catch {",
+      "    $ok = $false;",
+      "  }",
+      "}",
+      "if ($ok) { exit 0 }",
       "exit 3",
     ].join(" ");
 

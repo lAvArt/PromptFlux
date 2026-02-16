@@ -84,6 +84,7 @@ File location:
 
 Common settings:
 - `hotkey`
+- `forceEndHotkey`
 - `triggerMode`
 - `wakeWord`
 - `wakeSilenceMs`

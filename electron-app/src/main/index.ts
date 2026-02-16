@@ -18,6 +18,7 @@ type SettingsGetResponse = {
 
 type SettingsSaveRequest = {
   hotkey: string;
+  forceEndHotkey: string;
   outputMode: AppConfig["outputMode"];
   transcriptionLanguage: AppConfig["transcriptionLanguage"];
   triggerMode: AppConfig["triggerMode"];
@@ -59,6 +60,15 @@ let listDevicesCommand = "";
 let listDevicesArgs: string[] = [];
 
 const OUTPUT_TOGGLE_HOTKEY = "CommandOrControl+Shift+Alt+V";
+let registeredForceEndHotkey: string | null = null;
+
+function normalizeHotkeySignature(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/commandorcontrol/g, "ctrl");
+}
 
 function safeLog(...args: unknown[]): void {
   try {
@@ -252,6 +262,13 @@ function stopRecording(
     "transcribing",
   );
   sttClient.send("STOP", { language: appConfig.transcriptionLanguage });
+}
+
+function forceEndTalk(): void {
+  if (!recordingActive) {
+    return;
+  }
+  stopRecording("hotkey");
 }
 
 function createWatchdog(): SttProcessWatchdog {
@@ -474,6 +491,27 @@ function registerRecordHotkey(): void {
   });
 }
 
+function registerForceEndHotkey(): void {
+  const nextHotkey = appConfig.forceEndHotkey.trim();
+  if (!nextHotkey) {
+    throw new Error("Force end-talk hotkey is required.");
+  }
+  if (normalizeHotkeySignature(nextHotkey) === normalizeHotkeySignature(OUTPUT_TOGGLE_HOTKEY)) {
+    throw new Error("Force end-talk hotkey cannot match the output-mode toggle hotkey.");
+  }
+  if (registeredForceEndHotkey && registeredForceEndHotkey !== nextHotkey) {
+    globalShortcut.unregister(registeredForceEndHotkey);
+    registeredForceEndHotkey = null;
+  }
+  const ok = globalShortcut.register(nextHotkey, () => {
+    forceEndTalk();
+  });
+  if (!ok) {
+    throw new Error(`Failed to register force end-talk hotkey: ${nextHotkey}`);
+  }
+  registeredForceEndHotkey = nextHotkey;
+}
+
 async function queryDevices() {
   if (!listDevicesCommand) {
     return { microphones: [], systemAudio: [] };
@@ -531,6 +569,17 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
   const hotkey = typeof source.hotkey === "string" ? source.hotkey.trim() : "";
   if (!hotkey) {
     throw new Error("Hotkey is required.");
+  }
+  const forceEndHotkey =
+    typeof source.forceEndHotkey === "string" ? source.forceEndHotkey.trim() : appConfig.forceEndHotkey;
+  if (!forceEndHotkey) {
+    throw new Error("Force end-talk hotkey is required.");
+  }
+  if (normalizeHotkeySignature(hotkey) === normalizeHotkeySignature(forceEndHotkey)) {
+    throw new Error("Record hotkey and force end-talk hotkey must be different.");
+  }
+  if (normalizeHotkeySignature(forceEndHotkey) === normalizeHotkeySignature(OUTPUT_TOGGLE_HOTKEY)) {
+    throw new Error("Force end-talk hotkey cannot match the output-mode toggle hotkey.");
   }
 
   const outputMode =
@@ -615,6 +664,7 @@ function sanitizeSaveRequest(payload: unknown): SettingsSaveRequest {
 
   return {
     hotkey,
+    forceEndHotkey,
     outputMode,
     transcriptionLanguage,
     triggerMode,
@@ -664,6 +714,7 @@ function registerIpcHandlers(): void {
     appConfig = {
       ...appConfig,
       hotkey: next.hotkey,
+      forceEndHotkey: next.forceEndHotkey,
       outputMode: next.outputMode,
       transcriptionLanguage: next.transcriptionLanguage,
       triggerMode: next.triggerMode,
@@ -689,9 +740,14 @@ function registerIpcHandlers(): void {
       if (previous.hotkey !== appConfig.hotkey) {
         registerRecordHotkey();
       }
+      if (previous.forceEndHotkey !== appConfig.forceEndHotkey) {
+        registerForceEndHotkey();
+      }
     } catch (error) {
       appConfig.hotkey = previous.hotkey;
+      appConfig.forceEndHotkey = previous.forceEndHotkey;
       registerRecordHotkey();
+      registerForceEndHotkey();
       throw error;
     }
 
@@ -770,6 +826,7 @@ async function bootstrap(): Promise<void> {
   appConfig = loadConfig();
   safeLog("[promptflux] config loaded", {
     hotkey: appConfig.hotkey,
+    forceEndHotkey: appConfig.forceEndHotkey,
     outputMode: appConfig.outputMode,
     transcriptionLanguage: appConfig.transcriptionLanguage,
     triggerMode: appConfig.triggerMode,
@@ -832,6 +889,11 @@ async function bootstrap(): Promise<void> {
   await ensureSocketConnected();
 
   registerRecordHotkey();
+  try {
+    registerForceEndHotkey();
+  } catch (error) {
+    safeError("[promptflux] failed to register force end-talk hotkey", error);
+  }
 
   const toggleRegistered = globalShortcut.register(OUTPUT_TOGGLE_HOTKEY, () => {
     appConfig.outputMode = appConfig.outputMode === "clipboard-only" ? "auto-paste" : "clipboard-only";

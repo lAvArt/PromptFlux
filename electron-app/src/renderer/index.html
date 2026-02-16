@@ -661,6 +661,12 @@
                   <button class="detect-btn" id="detect-hotkey" type="button" title="Capture a hotkey combination">Detect</button>
                 </div>
                 <div class="hint">Used by hotkey trigger modes. Hold to talk, or tap and release to start then auto-stop on silence.</div>
+                <label for="force-end-hotkey-input" style="margin-top: 8px;">Force End-Talk Hotkey</label>
+                <div class="hotkey-row">
+                  <input id="force-end-hotkey-input" type="text" placeholder="Ctrl+Shift+Backspace" />
+                  <button class="detect-btn" id="detect-force-end-hotkey" type="button" title="Capture a force end-talk hotkey">Detect</button>
+                </div>
+                <div class="hint">Instantly stops active recording and starts transcription in any trigger mode.</div>
               </div>
               <div class="field">
                 <label for="output-mode-select">Output Mode</label>
@@ -819,7 +825,8 @@
               </div>
               <div class="mobile-url-list" id="mobile-url-list">Mobile relay is disabled.</div>
               <div class="hint" style="margin-top: 6px;">
-                Uses HTTPS with a local certificate. On first phone access, use browser Advanced/Proceed.
+                Uses HTTPS with a local certificate. If phone shows Not Secure, open the mobile page and
+                install/trust the downloaded PromptFlux certificate.
               </div>
             </div>
           </div>
@@ -851,12 +858,14 @@
       const saveSettings = document.getElementById("save-settings");
       const refreshDevices = document.getElementById("refresh-devices");
       const detectHotkey = document.getElementById("detect-hotkey");
+      const detectForceEndHotkey = document.getElementById("detect-force-end-hotkey");
       const saveNote = document.getElementById("save-note");
       const windowMinBtn = document.getElementById("window-min-btn");
       const windowMaxBtn = document.getElementById("window-max-btn");
       const windowCloseBtn = document.getElementById("window-close-btn");
 
       const hotkeyInput = document.getElementById("hotkey-input");
+      const forceEndHotkeyInput = document.getElementById("force-end-hotkey-input");
       const outputModeSelect = document.getElementById("output-mode-select");
       const cueEnabledInput = document.getElementById("cue-enabled-input");
       const cueVolumeInput = document.getElementById("cue-volume-input");
@@ -894,7 +903,7 @@
         devices: { microphones: [], systemAudio: [] },
         outputToggleHotkey: "Ctrl+Shift+Alt+V",
         mobileConnection: null,
-        capturingHotkey: false,
+        capturingHotkeyTarget: null,
         cueSettings: {
           enabled: true,
           volume: 45,
@@ -1002,12 +1011,17 @@
         return "";
       }
 
-      function setCapturingHotkey(enabled) {
-        state.capturingHotkey = enabled;
+      function setCapturingHotkey(target) {
+        const normalizedTarget = target === "record" || target === "force-end" ? target : null;
+        state.capturingHotkeyTarget = normalizedTarget;
         resetHotkeyCaptureState();
-        detectHotkey.classList.toggle("capturing", enabled);
-        detectHotkey.textContent = enabled ? "Press..." : "Detect";
-        saveNote.textContent = enabled
+        const recordActive = normalizedTarget === "record";
+        const forceEndActive = normalizedTarget === "force-end";
+        detectHotkey.classList.toggle("capturing", recordActive);
+        detectForceEndHotkey.classList.toggle("capturing", forceEndActive);
+        detectHotkey.textContent = recordActive ? "Press..." : "Detect";
+        detectForceEndHotkey.textContent = forceEndActive ? "Press..." : "Detect";
+        saveNote.textContent = normalizedTarget
           ? "Press your desired key combination, then release."
           : "";
       }
@@ -1189,6 +1203,7 @@
       function hydrateForm() {
         if (!state.config) return;
         hotkeyInput.value = state.config.hotkey || "";
+        forceEndHotkeyInput.value = state.config.forceEndHotkey || "Ctrl+Shift+Backspace";
         outputModeSelect.value = state.config.outputMode || "clipboard-only";
         applyCueSettings({
           enabled: state.config.soundCueEnabled,
@@ -1251,6 +1266,7 @@
         if (!api) return;
         const payload = {
           hotkey: hotkeyInput.value,
+          forceEndHotkey: forceEndHotkeyInput.value,
           outputMode: outputModeSelect.value,
           soundCueEnabled: cueEnabledInput.checked,
           soundCueVolume: Number(cueVolumeInput.value || 45),
@@ -1352,7 +1368,10 @@
         updateCueVolumeTrack();
       });
       detectHotkey.addEventListener("click", () => {
-        setCapturingHotkey(!state.capturingHotkey);
+        setCapturingHotkey(state.capturingHotkeyTarget === "record" ? null : "record");
+      });
+      detectForceEndHotkey.addEventListener("click", () => {
+        setCapturingHotkey(state.capturingHotkeyTarget === "force-end" ? null : "force-end");
       });
       windowMinBtn.addEventListener("click", async () => {
         if (!api) return;
@@ -1377,7 +1396,7 @@
       document.addEventListener(
         "keydown",
         (event) => {
-          if (!state.capturingHotkey) {
+          if (!state.capturingHotkeyTarget) {
             return;
           }
           event.preventDefault();
@@ -1395,7 +1414,7 @@
             !event.metaKey &&
             captureTokenOrder.length === 0
           ) {
-            setCapturingHotkey(false);
+            setCapturingHotkey(null);
             return;
           }
 
@@ -1405,7 +1424,11 @@
             return;
           }
 
-          hotkeyInput.value = combo;
+          if (state.capturingHotkeyTarget === "force-end") {
+            forceEndHotkeyInput.value = combo;
+          } else {
+            hotkeyInput.value = combo;
+          }
         },
         true,
       );
@@ -1413,7 +1436,7 @@
       document.addEventListener(
         "keyup",
         (event) => {
-          if (!state.capturingHotkey) {
+          if (!state.capturingHotkeyTarget) {
             return;
           }
           event.preventDefault();
@@ -1426,7 +1449,7 @@
 
           trackCaptureTokenUp(token);
           if (capturePressedTokens.size === 0 && captureTokenOrder.length > 0) {
-            setCapturingHotkey(false);
+            setCapturingHotkey(null);
           }
         },
         true,
